@@ -85,12 +85,8 @@ The application can be packaged into a single, standalone executable using `PyIn
 
 ---
 
-## 7. Cross-Platform Compatibility
+## 8. Future Enhancements
 
-Great care has been taken to ensure that the application runs correctly on both macOS and Ubuntu Linux.
+### Test Runner Command
 
-### Key Features:
-
-*   **Platform-Agnostic Paths**: The use of `pathlib.Path` ensures that all file paths are handled correctly on both operating systems.
-*   **Conditional Imports**: The application uses `sys.platform == 'darwin'` to conditionally import the `gnureadline` library on macOS, which is not needed on Linux.
-*   **Cross-Platform Build Process**: The `INSTALL.md` file provides detailed instructions for building the application on both macOS and Linux.
+A dedicated `@test` command could be added to the application to allow developers to run the project's test suite without leaving the `DeepCoderX` interface. This would further streamline the development workflow and make `DeepCoderX` a more comprehensive development environment.
