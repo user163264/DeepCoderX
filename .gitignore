@@ -15,4 +15,13 @@ VENV/
 __pycache__/
 *.pyc
 
-/Users/admin/Documents/DeepCoderX/documentation/backup-routine.MD
+# PyInstaller files
+build/
+dist/
+*.spec
+
+# Session files
+.deepcoderx/
+
+# Test cache
+.pytest_cache/
