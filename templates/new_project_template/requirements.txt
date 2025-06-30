@@ -1,0 +1,5 @@
+# Core libraries
+# (e.g., requests, numpy, pandas)
+
+# Testing
+pytest

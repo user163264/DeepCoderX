@@ -1,0 +1,57 @@
+import pytest
+from unittest.mock import MagicMock, patch
+from models.router import CommandProcessor
+from models.session import CommandContext
+from services.llm_handler import LocalCodingHandler, DeepSeekAnalysisHandler, FilesystemCommandHandler
+from services.mcpclient import MCPClient
+
+# This is an integration test, so we use real components where possible.
+# We will only mock the parts that are external or slow, like the AI model itself.
+
+@pytest.fixture
+def mock_llama():
+    with patch('services.llm_handler.Llama') as mock:
+        instance = mock.return_value
+        # Simulate the model asking to write a file
+        instance.create_chat_completion.return_value = {
+            'choices': [{'message': {'content': '{"tool": "write_file", "path": "hello.txt", "content": "Hello from an integration test"}'}}]
+        }
+
+@pytest.fixture
+def real_command_context(tmp_path):
+    """Creates a CommandContext with a real MCPClient pointing to a temp directory."""
+    # For integration tests, we don't want to touch the real file system.
+    # tmp_path is a pytest fixture that provides a temporary directory.
+    sandbox_path = tmp_path
+    
+    # We need a real MCPClient, but we can mock the server interaction
+    mcp_client = MCPClient(endpoint="http://fake.server", api_key="fake_key")
+    mcp_client.write_file = MagicMock(return_value={"status": "success"})
+
+    ctx = CommandContext(
+        root_path=sandbox_path,
+        mcp_client=mcp_client,
+        sandbox_path=sandbox_path
+    )
+    ctx.debug_mode = False
+    return ctx
+
+def test_full_command_integration(real_command_context, mock_llama):
+    """Tests the full flow from CommandProcessor to a handler executing a tool."""
+    processor = CommandProcessor(real_command_context)
+    # Use the real handlers
+    processor.add_handler(LocalCodingHandler(real_command_context))
+
+    # Set the user input that will trigger the mocked model's tool call
+    real_command_context.user_input = "create a hello world file"
+
+    # Execute the command
+    real_command_context.user_input = "create a hello world file"
+    processor.execute("create a hello world file")
+
+    # Assert that the MCPClient's write_file method was actually called
+    # This proves that the CommandProcessor, LocalCodingHandler, and MCPClient
+    # are all working together correctly.
+    real_command_context.mcp_client.write_file.assert_called_once_with(
+        "hello.txt", "Hello from an integration test"
+    )

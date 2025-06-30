@@ -1,0 +1,319 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2818
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 platform darwin -- Python 3.13.5, pytest-8.4.1, pluggy-1.6.0 -- /Users/admin/Documents/DeepCoderX/VENV/bin/python\
+cachedir: .pytest_cache\
+rootdir: /Users/admin/Documents/DeepCoderX\
+configfile: pytest.ini\
+plugins: mock-3.14.1, requests-mock-1.12.1\
+collected 39 items\
+\
+test_basic.py::test_basic_math PASSED                                                  [  2%]\
+test_basic.py::test_string_operations PASSED                                           [  5%]\
+test_basic.py::test_list_operations PASSED                                             [  7%]\
+test_direct.py::test_mcp_services_directly PASSED                                      [ 10%]\
+test_direct.py::test_command_router_directly PASSED                                    [ 12%]\
+test_direct.py::test_llm_handlers_directly PASSED                                      [ 15%]\
+test_imports.py::test_imports PASSED                                                   [ 17%]\
+test_imports.py::test_basic_functionality PASSED                                       [ 20%]\
+test_router_only.py::test_command_router PASSED                                        [ 23%]\
+test_syntax.py::test_syntax ERROR                                                      [ 25%]\
+tests/test_auto_implement_handler.py::test_parse_response PASSED                       [ 28%]\
+tests/test_auto_implement_handler.py::test_apply_change PASSED                         [ 30%]\
+tests/test_command_router.py::test_command_routing PASSED                              [ 33%]\
+tests/test_command_router.py::test_fallback_handler PASSED                             [ 35%]\
+tests/test_command_router.py::test_middleware_execution PASSED                         [ 38%]\
+tests/test_filesystem_handler.py::test_filesystem_handler_list_dir PASSED              [ 41%]\
+tests/test_filesystem_handler.py::test_filesystem_handler_read_file PASSED             [ 43%]\
+tests/test_integration.py::test_full_command_integration PASSED                        [ 46%]\
+tests/test_integration.py::test_mcp_client_integration_read_file PASSED                [ 48%]\
+tests/test_integration.py::test_mcp_client_integration_write_file PASSED               [ 51%]\
+tests/test_integration.py::test_mcp_client_integration_list_dir PASSED                 [ 53%]\
+tests/test_integration.py::test_mcp_client_integration_delete_path PASSED              [ 56%]\
+tests/test_llm_handlers.py::test_local_handler_initialization PASSED                   [ 58%]\
+tests/test_llm_handlers.py::test_local_handler_simple_prompt PASSED                    [ 61%]\
+tests/test_llm_handlers.py::test_local_handler_with_file_mention PASSED                [ 64%]\
+tests/test_llm_handlers.py::test_clear_history PASSED                                  [ 66%]\
+tests/test_mcp_services.py::test_read_file_success FAILED                              [ 69%]\
+tests/test_mcp_services.py::test_write_file_success FAILED                             [ 71%]\
+tests/test_mcp_services.py::test_list_dir_success FAILED                               [ 74%]\
+tests/test_mcp_services.py::test_delete_path_success FAILED                            [ 76%]\
+tests/test_mcp_services.py::test_client_handles_network_error PASSED                   [ 79%]\
+tests/test_mcp_services.py::test_write_file_network_error PASSED                       [ 82%]\
+tests/test_mcp_services.py::test_list_dir_network_error PASSED                         [ 84%]\
+tests/test_mcp_services.py::test_delete_path_network_error PASSED                      [ 87%]\
+tests/test_mcp_services.py::test_read_file_with_special_characters FAILED              [ 89%]\
+tests/test_mcp_services.py::test_delete_path_without_recursive FAILED                  [ 92%]\
+tests/test_tool_loop.py::test_single_tool_call_loop PASSED                             [ 94%]\
+tests/test_tool_loop.py::test_multiple_tool_calls_in_one_turn FAILED                   [ 97%]\
+tests/test_tool_loop.py::test_tool_loop_with_invalid_json ERROR                        [100%]\
+\
+=========================================== ERRORS ===========================================\
+_______________________________ ERROR at setup of test_syntax ________________________________\
+file /Users/admin/Documents/DeepCoderX/test_syntax.py, line 10\
+  def test_syntax(file_path):\
+E       fixture 'file_path' not found\
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, class_mocker, doctest_namespace, mocker, module_mocker, monkeypatch, package_mocker, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, requests_mock, session_mocker, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory\
+>       use 'pytest --fixtures [testpath]' for help on them.\
+\
+/Users/admin/Documents/DeepCoderX/test_syntax.py:10\
+_____________________ ERROR at setup of test_tool_loop_with_invalid_json _____________________\
+file /Users/admin/Documents/DeepCoderX/tests/test_tool_loop.py, line 86\
+  @patch('services.llm_handler.config')\
+  def test_tool_loop_with_invalid_json(command_context, mock_llama, mock_config):\
+E       fixture 'mock_config' not found\
+>       available fixtures: cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, class_mocker, command_context, doctest_namespace, mock_llama, mocker, module_mocker, monkeypatch, package_mocker, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, requests_mock, session_mocker, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory\
+>       use 'pytest --fixtures [testpath]' for help on them.\
+\
+/Users/admin/Documents/DeepCoderX/tests/test_tool_loop.py:86\
+========================================== FAILURES ==========================================\
+___________________________________ test_read_file_success ___________________________________\
+\
+mock_get = <MagicMock name='get' id='4389118576'>\
+mcp_client = <services.mcpclient.MCPClient object at 0x1054bf570>\
+\
+    @patch('services.mcpclient.requests.get')\
+    def test_read_file_success(mock_get, mcp_client):\
+        """Tests a successful file read call."""\
+        mock_response = MagicMock()\
+        mock_response.json.return_value = \{"content": "hello world"\}\
+        mock_get.return_value = mock_response\
+\
+        result = mcp_client.read_file("test.txt")\
+\
+        mock_get.assert_called_once_with(\
+            "http://test.server:8080/read?file=test.txt",\
+            headers=\{"Content-Type": "application/json", "X-API-Key": "test-key"\},\
+            timeout=10\
+        )\
+>       assert result == \{"content": "hello world"\}\
+E       assert \{'error': "HT...4389520448'>"\} == \{'content': 'hello world'\}\
+E\
+E         Left contains 1 more item:\
+E         \{'error': "HTTP <MagicMock name='get().status_code' id='4389520448'>"\}\
+E         Right contains 1 more item:\
+E         \{'content': 'hello world'\}\
+E\
+E         Full diff:...\
+E\
+E         ...Full output truncated (4 lines hidden), use '-vv' to show\
+\
+tests/test_mcp_services.py:28: AssertionError\
+__________________________________ test_write_file_success ___________________________________\
+\
+mock_post = <MagicMock name='post' id='4389116224'>\
+mcp_client = <services.mcpclient.MCPClient object at 0x10551ec50>\
+\
+    @patch('services.mcpclient.requests.post')\
+    def test_write_file_success(mock_post, mcp_client):\
+        """Tests a successful file write call."""\
+        mock_response = MagicMock()\
+        mock_response.json.return_value = \{"status": "success"\}\
+        mock_post.return_value = mock_response\
+\
+        result = mcp_client.write_file("new.txt", "some content")\
+\
+        mock_post.assert_called_once_with(\
+            "http://test.server:8080/write",\
+            headers=\{"Content-Type": "application/json", "X-API-Key": "test-key"\},\
+            json=\{"file": "new.txt", "content": "some content"\},\
+            timeout=10\
+        )\
+>       assert result == \{"status": "success"\}\
+E       assert \{'error': "HT...4389113200'>"\} == \{'status': 'success'\}\
+E\
+E         Left contains 1 more item:\
+E         \{'error': "HTTP <MagicMock name='post().status_code' id='4389113200'>"\}\
+E         Right contains 1 more item:\
+E         \{'status': 'success'\}\
+E\
+E         Full diff:...\
+E\
+E         ...Full output truncated (4 lines hidden), use '-vv' to show\
+\
+tests/test_mcp_services.py:45: AssertionError\
+___________________________________ test_list_dir_success ____________________________________\
+\
+mock_post = <MagicMock name='post' id='4389523136'>\
+mcp_client = <services.mcpclient.MCPClient object at 0x10551ef50>\
+\
+    @patch('services.mcpclient.requests.post')\
+    def test_list_dir_success(mock_post, mcp_client):\
+        """Tests a successful directory listing call."""\
+        mock_response = MagicMock()\
+        mock_response.json.return_value = \{"files": ["a.txt"], "directories": ["d1"]\}\
+        mock_post.return_value = mock_response\
+\
+        result = mcp_client.list_dir(".")\
+\
+        mock_post.assert_called_once_with(\
+            "http://test.server:8080/list",\
+            headers=\{"Content-Type": "application/json", "X-API-Key": "test-key"\},\
+            json=\{"path": "."\},\
+            timeout=10\
+        )\
+>       assert result == \{"files": ["a.txt"], "directories": ["d1"]\}\
+E       assert \{'error': "HT...4389524144'>"\} == \{'directories...s': ['a.txt']\}\
+E\
+E         Left contains 1 more item:\
+E         \{'error': "HTTP <MagicMock name='post().status_code' id='4389524144'>"\}\
+E         Right contains 2 more items:\
+E         \{'directories': ['d1'], 'files': ['a.txt']\}\
+E\
+E         Full diff:...\
+E\
+E         ...Full output truncated (9 lines hidden), use '-vv' to show\
+\
+tests/test_mcp_services.py:62: AssertionError\
+__________________________________ test_delete_path_success __________________________________\
+\
+mock_post = <MagicMock name='post' id='4389525152'>\
+mcp_client = <services.mcpclient.MCPClient object at 0x1059a37a0>\
+\
+    @patch('services.mcpclient.requests.post')\
+    def test_delete_path_success(mock_post, mcp_client):\
+        """Tests a successful path deletion call."""\
+        mock_response = MagicMock()\
+        mock_response.json.return_value = \{"status": "success"\}\
+        mock_post.return_value = mock_response\
+\
+        result = mcp_client.delete_path("path/to/delete", recursive=True)\
+\
+        mock_post.assert_called_once_with(\
+            "http://test.server:8080/delete",\
+            headers=\{"Content-Type": "application/json", "X-API-Key": "test-key"\},\
+            json=\{"path": "path/to/delete", "recursive": True\},\
+            timeout=10\
+        )\
+>       assert result == \{"status": "success"\}\
+E       assert \{'error': "HT...4389526160'>"\} == \{'status': 'success'\}\
+E\
+E         Left contains 1 more item:\
+E         \{'error': "HTTP <MagicMock name='post().status_code' id='4389526160'>"\}\
+E         Right contains 1 more item:\
+E         \{'status': 'success'\}\
+E\
+E         Full diff:...\
+E\
+E         ...Full output truncated (4 lines hidden), use '-vv' to show\
+\
+tests/test_mcp_services.py:79: AssertionError\
+___________________________ test_read_file_with_special_characters ___________________________\
+\
+mock_get = <MagicMock name='get' id='4389524480'>\
+mcp_client = <services.mcpclient.MCPClient object at 0x1059c0ad0>\
+\
+    @patch('services.mcpclient.requests.get')\
+    def test_read_file_with_special_characters(mock_get, mcp_client):\
+        """Tests reading a file with special characters in the path."""\
+        mock_response = MagicMock()\
+        mock_response.json.return_value = \{"content": "special content"\}\
+        mock_get.return_value = mock_response\
+\
+        result = mcp_client.read_file("path with spaces/special-file_123.txt")\
+\
+        mock_get.assert_called_once_with(\
+            "http://test.server:8080/read?file=path with spaces/special-file_123.txt",\
+            headers=\{"Content-Type": "application/json", "X-API-Key": "test-key"\},\
+            timeout=10\
+        )\
+>       assert result == \{"content": "special content"\}\
+E       assert \{'error': "HT...4389527504'>"\} == \{'content': 'special content'\}\
+E\
+E         Left contains 1 more item:\
+E         \{'error': "HTTP <MagicMock name='get().status_code' id='4389527504'>"\}\
+E         Right contains 1 more item:\
+E         \{'content': 'special content'\}\
+E\
+E         Full diff:...\
+E\
+E         ...Full output truncated (4 lines hidden), use '-vv' to show\
+\
+tests/test_mcp_services.py:139: AssertionError\
+_____________________________ test_delete_path_without_recursive _____________________________\
+\
+mock_post = <MagicMock name='post' id='4389524144'>\
+mcp_client = <services.mcpclient.MCPClient object at 0x1059c2c90>\
+\
+    @patch('services.mcpclient.requests.post')\
+    def test_delete_path_without_recursive(mock_post, mcp_client):\
+        """Tests path deletion without recursive flag."""\
+        mock_response = MagicMock()\
+        mock_response.json.return_value = \{"status": "success"\}\
+        mock_post.return_value = mock_response\
+\
+        result = mcp_client.delete_path("file.txt")\
+\
+        mock_post.assert_called_once_with(\
+            "http://test.server:8080/delete",\
+            headers=\{"Content-Type": "application/json", "X-API-Key": "test-key"\},\
+            json=\{"path": "file.txt", "recursive": False\},\
+            timeout=10\
+        )\
+>       assert result == \{"status": "success"\}\
+E       assert \{'error': "HT...4389523136'>"\} == \{'status': 'success'\}\
+E\
+E         Left contains 1 more item:\
+E         \{'error': "HTTP <MagicMock name='post().status_code' id='4389523136'>"\}\
+E         Right contains 1 more item:\
+E         \{'status': 'success'\}\
+E\
+E         Full diff:...\
+E\
+E         ...Full output truncated (4 lines hidden), use '-vv' to show\
+\
+tests/test_mcp_services.py:156: AssertionError\
+____________________________ test_multiple_tool_calls_in_one_turn ____________________________\
+\
+mock_llama = <MagicMock name='Llama' id='4389532208'>\
+mock_config = <MagicMock name='config' id='4389532544'>\
+command_context = <MagicMock spec='CommandContext' id='4389531872'>\
+\
+    @patch('services.llm_handler.config')\
+    @patch('services.llm_handler.Llama')\
+    def test_multiple_tool_calls_in_one_turn(mock_llama, mock_config, command_context):\
+        """Tests that the handler can execute multiple tool calls from a single model response."""\
+        mock_config.ROLE_SYSTEM = "Test system prompt"\
+        mock_config.LOCAL_MODEL_PATH = "/fake/path/model.gguf"\
+\
+        mock_llama_instance = mock_llama.return_value\
+        # The model asks to read two files at once.\
+        mock_llama_instance.create_chat_completion.side_effect = [\
+            \{'choices': [\{'message': \{'content': 'I need to read two files.\\n\{"tool": "read_file", "path": "a.txt"\}\\n\{"tool": "read_file", "path": "b.txt"\}'\}\}]\}\
+            ,\
+            \{'choices': [\{'message': \{'content': 'OK, I have both files.'\}\}]\}\
+        ]\
+        command_context.mcp_client.read_file.side_effect = [\
+            \{"content": "content of a"\},\
+            \{"content": "content of b"\}\
+        ]\
+\
+        handler = LocalCodingHandler(command_context)\
+        command_context.user_input = "compare a.txt and b.txt"\
+        handler.handle()\
+\
+        # Check that read_file was called for both files\
+>       assert command_context.mcp_client.read_file.call_count == 2\
+E       AssertionError: assert 0 == 2\
+E        +  where 0 = <MagicMock name='mock.mcp_client.read_file' id='4389533552'>.call_count\
+E        +    where <MagicMock name='mock.mcp_client.read_file' id='4389533552'> = <MagicMock name='mock.mcp_client' id='4389531536'>.read_file\
+E        +      where <MagicMock name='mock.mcp_client' id='4389531536'> = <MagicMock spec='CommandContext' id='4389531872'>.mcp_client\
+\
+tests/test_tool_loop.py:75: AssertionError\
+================================== short test summary info ===================================\
+FAILED tests/test_mcp_services.py::test_read_file_success - assert \{'error': "HT...4389520448'>"\} == \{'content': 'hello world'\}\
+FAILED tests/test_mcp_services.py::test_write_file_success - assert \{'error': "HT...4389113200'>"\} == \{'status': 'success'\}\
+FAILED tests/test_mcp_services.py::test_list_dir_success - assert \{'error': "HT...4389524144'>"\} == \{'directories...s': ['a.txt']\}\
+FAILED tests/test_mcp_services.py::test_delete_path_success - assert \{'error': "HT...4389526160'>"\} == \{'status': 'success'\}\
+FAILED tests/test_mcp_services.py::test_read_file_with_special_characters - assert \{'error': "HT...4389527504'>"\} == \{'content': 'special content'\}\
+FAILED tests/test_mcp_services.py::test_delete_path_without_recursive - assert \{'error': "HT...4389523136'>"\} == \{'status': 'success'\}\
+FAILED tests/test_tool_loop.py::test_multiple_tool_calls_in_one_turn - AssertionError: assert 0 == 2\
+ERROR test_syntax.py::test_syntax\
+ERROR tests/test_tool_loop.py::test_tool_loop_with_invalid_json\
+===================== 7 failed, 30 passed, 6 warnings, 2 errors in 3.38s =====================\
+=========================================\
+\uc0\u10060  Tests failed with exit code: 1}

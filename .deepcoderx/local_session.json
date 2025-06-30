@@ -1,0 +1,26 @@
+[
+  {
+    "role": "system",
+    "content": "You are an expert programmer. You have access to a set of tools to interact with the local file system. \nWhen you need to access files, you must use these tools. You can only use one tool at a time.\n\n**Available Tools:**\n- `read_file(path: str)`: Reads the content of a file.\n- `write_file(path: str, content: str)`: Writes content to a file.\n- `list_dir(path: str)`: Lists the contents of a directory.\n\nTo use a tool, respond with a JSON object like this: \n{\"tool\": \"read_file\", \"path\": \"/path/to/file.py\"}\n\nAfter you use a tool, the system will provide you with the result, and you can then continue the conversation.\nIf you have enough information to answer the user's request, provide the final answer directly without using a tool."
+  },
+  {
+    "role": "user",
+    "content": "hello"
+  },
+  {
+    "role": "assistant",
+    "content": "Hello! How can I assist you today?"
+  },
+  {
+    "role": "user",
+    "content": "what did you do today?"
+  },
+  {
+    "role": "assistant",
+    "content": "I was able to help you with your request. How can I assist you further?"
+  },
+  {
+    "role": "user",
+    "content": "hello"
+  }
+]

@@ -1,0 +1,783 @@
+# DeepCoderX Project Context Enhancement Guide
+
+**Document Version:** 1.0  
+**Date:** June 27, 2025  
+**Author:** Claude Sonnet 4
+
+## Overview
+
+This guide provides a comprehensive roadmap for enhancing DeepCoderX's project context awareness from "Good" to "Excellent". The enhancements focus on making the context system dynamic, intelligent, and deeply aware of project evolution.
+
+**Current State:** Static context building with basic file analysis  
+**Target State:** Dynamic, AI-powered project intelligence with real-time updates
+
+---
+
+## 1. Real-Time Context Updates (High Impact)
+
+### Problem
+Currently, context is built once and saved to `.deepcoderx_context.md`. This becomes stale as the project evolves.
+
+### Solution
+Implement file system watching with incremental context updates.
+
+### Implementation
+
+#### Enhanced Context Manager
+```python
+# services/context_manager.py - Enhanced version
+import json
+import time
+from pathlib import Path
+from typing import Dict, Any
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+from ..models.session import CommandContext
+from ..utils.logging import console
+
+class ContextManager:
+    """
+    Enhanced context manager with real-time updates and intelligent caching.
+    """
+    CONTEXT_FILE_NAME = ".deepcoderx_context.md"
+    CACHE_FILE_NAME = ".deepcoderx_cache.json"
+
+    def __init__(self, context: CommandContext):
+        self.ctx = context
+        self.context_file_path = self.ctx.root_path / self.CONTEXT_FILE_NAME
+        self.cache_file_path = self.ctx.root_path / self.CACHE_FILE_NAME
+        self.file_observer = None
+        self.last_update = None
+        self.pending_updates = set()
+        
+    def setup_file_watcher(self):
+        """Watch for file changes and update context incrementally"""
+        class ContextUpdateHandler(FileSystemEventHandler):
+            def __init__(self, context_manager):
+                self.context_manager = context_manager
+                
+            def on_modified(self, event):
+                if not event.is_directory and self.should_track_file(event.src_path):
+                    self.context_manager.queue_incremental_update(event.src_path)
+                    
+            def on_created(self, event):
+                if not event.is_directory and self.should_track_file(event.src_path):
+                    self.context_manager.queue_incremental_update(event.src_path)
+                    
+            def on_deleted(self, event):
+                if not event.is_directory:
+                    self.context_manager.queue_file_removal(event.src_path)
+                    
+            def should_track_file(self, file_path):
+                """Only track relevant files to avoid noise"""
+                path = Path(file_path)
+                relevant_extensions = {'.py', '.js', '.ts', '.go', '.rs', '.java', 
+                                     '.json', '.yml', '.yaml', '.md', '.txt'}
+                return (path.suffix in relevant_extensions and 
+                        not any(exclude in str(path) for exclude in 
+                               ['.git', '__pycache__', 'node_modules', '.venv']))
+        
+        self.file_observer = Observer()
+        self.file_observer.schedule(
+            ContextUpdateHandler(self), 
+            str(self.ctx.root_path), 
+            recursive=True
+        )
+        self.file_observer.start()
+        console.print("[dim]📁 File watcher started for real-time context updates[/dim]")
+    
+    def queue_incremental_update(self, file_path: str):
+        """Queue a file for incremental context update"""
+        self.pending_updates.add(file_path)
+        # Debounce updates - only process after 2 seconds of inactivity
+        time.sleep(2)
+        if file_path in self.pending_updates:
+            self.incremental_update(file_path)
+            self.pending_updates.discard(file_path)
+    
+    def incremental_update(self, changed_file_path: str):
+        """Update context when files change instead of full rebuild"""
+        try:
+            # Load existing context cache
+            cache = self.load_context_cache()
+            
+            # Update only the affected file's analysis
+            file_path = Path(changed_file_path)
+            if file_path.exists():
+                file_analysis = self.analyze_single_file(file_path)
+                cache['files'][str(file_path.relative_to(self.ctx.root_path))] = file_analysis
+                
+                # Update dependency graph if it's a source file
+                if file_path.suffix in {'.py', '.js', '.ts', '.go', '.rs'}:
+                    self.update_dependency_graph(cache, file_path, file_analysis)
+                
+                # Save updated cache
+                self.save_context_cache(cache)
+                
+                # Regenerate context file
+                self.rebuild_context_from_cache(cache)
+                
+                if self.ctx.debug_mode:
+                    console.print(f"[dim]🔄 Updated context for {file_path.name}[/dim]")
+                    
+        except Exception as e:
+            if self.ctx.debug_mode:
+                console.print(f"[dim]⚠️ Context update failed: {e}[/dim]")
+    
+    def load_context_cache(self) -> dict:
+        """Load cached context data"""
+        if self.cache_file_path.exists():
+            try:
+                with open(self.cache_file_path, 'r') as f:
+                    return json.load(f)
+            except:
+                pass
+        
+        # Return empty cache structure
+        return {
+            'files': {},
+            'dependencies': {},
+            'last_update': None,
+            'project_stats': {}
+        }
+    
+    def save_context_cache(self, cache: dict):
+        """Save context cache to disk"""
+        cache['last_update'] = time.time()
+        with open(self.cache_file_path, 'w') as f:
+            json.dump(cache, f, indent=2)
+    
+    def analyze_single_file(self, file_path: Path) -> dict:
+        """Analyze a single file for context information"""
+        try:
+            stat = file_path.stat()
+            content = file_path.read_text(encoding='utf-8', errors='ignore')
+            
+            analysis = {
+                'size': stat.st_size,
+                'modified': stat.st_mtime,
+                'lines': len(content.splitlines()),
+                'type': file_path.suffix
+            }
+            
+            # Language-specific analysis
+            if file_path.suffix == '.py':
+                analysis.update(self.analyze_python_file(content))
+            elif file_path.suffix in {'.js', '.ts'}:
+                analysis.update(self.analyze_javascript_file(content))
+            
+            return analysis
+            
+        except Exception:
+            return {'error': 'Analysis failed'}
+    
+    def analyze_python_file(self, content: str) -> dict:
+        """Extract Python-specific information"""
+        import re
+        
+        imports = re.findall(r'^\s*(?:from|import)\s+(\w+)', content, re.MULTILINE)
+        functions = re.findall(r'^\s*def\s+(\w+)', content, re.MULTILINE)
+        classes = re.findall(r'^\s*class\s+(\w+)', content, re.MULTILINE)
+        
+        return {
+            'imports': imports,
+            'functions': functions,
+            'classes': classes,
+            'language': 'python'
+        }
+    
+    def analyze_javascript_file(self, content: str) -> dict:
+        """Extract JavaScript/TypeScript-specific information"""
+        import re
+        
+        imports = re.findall(r'import\s+.*?from\s+[\'"]([^\'"]+)[\'"]', content)
+        exports = re.findall(r'export\s+(?:default\s+)?(?:function\s+|class\s+|const\s+)?(\w+)', content)
+        functions = re.findall(r'(?:function\s+(\w+)|const\s+(\w+)\s*=.*?=>)', content)
+        
+        return {
+            'imports': imports,
+            'exports': exports,
+            'functions': [f for sublist in functions for f in sublist if f],
+            'language': 'javascript'
+        }
+    
+    def stop_file_watcher(self):
+        """Stop the file system watcher"""
+        if self.file_observer:
+            self.file_observer.stop()
+            self.file_observer.join()
+```
+
+---
+
+## 2. Git Integration (High Impact)
+
+### Problem
+No awareness of project history, recent changes, or development patterns.
+
+### Solution
+Integrate Git data to understand project evolution and developer focus areas.
+
+### Implementation
+
+#### Git Context Builder
+```python
+# services/git_context.py - New module
+import subprocess
+import json
+from pathlib import Path
+from typing import List, Dict, Optional
+from datetime import datetime, timedelta
+from collections import Counter, defaultdict
+
+class GitContextBuilder:
+    """
+    Extracts Git-based project intelligence for enhanced context awareness.
+    """
+    
+    def __init__(self, project_path: Path):
+        self.project_path = project_path
+        self.is_git_repo = self._check_git_repo()
+    
+    def _check_git_repo(self) -> bool:
+        """Check if the project is a Git repository"""
+        return (self.project_path / '.git').exists()
+    
+    def get_git_context(self) -> dict:
+        """Extract comprehensive Git-based project intelligence"""
+        if not self.is_git_repo:
+            return {"git_available": False, "message": "Not a Git repository"}
+        
+        return {
+            "git_available": True,
+            "recent_changes": self.get_recent_commits(),
+            "active_branches": self.get_branches(),
+            "uncommitted_changes": self.get_status(),
+            "file_change_frequency": self.get_file_activity(),
+            "contributors": self.get_contributors(),
+            "project_timeline": self.get_project_timeline(),
+            "hot_files": self.get_frequently_changed_files(),
+            "commit_patterns": self.analyze_commit_patterns(),
+            "branch_analysis": self.analyze_branch_patterns()
+        }
+    
+    def get_recent_commits(self, limit: int = 20) -> List[dict]:
+        """Get recent commit information for understanding current work"""
+        try:
+            result = subprocess.run([
+                "git", "log", f"-{limit}", 
+                "--pretty=format:%H|%an|%ae|%ad|%s", 
+                "--date=iso", "--no-merges"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=10)
+            
+            if result.returncode != 0:
+                return []
+            
+            commits = []
+            for line in result.stdout.strip().split('\n'):
+                if line:
+                    parts = line.split('|', 4)
+                    if len(parts) == 5:
+                        commits.append({
+                            "hash": parts[0][:8],
+                            "author": parts[1],
+                            "email": parts[2],
+                            "date": parts[3],
+                            "message": parts[4]
+                        })
+            return commits
+            
+        except Exception:
+            return []
+    
+    def get_branches(self) -> dict:
+        """Get branch information"""
+        try:
+            # Current branch
+            current_result = subprocess.run([
+                "git", "branch", "--show-current"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=5)
+            
+            # All branches
+            branches_result = subprocess.run([
+                "git", "branch", "-a"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=5)
+            
+            current_branch = current_result.stdout.strip() if current_result.returncode == 0 else "unknown"
+            all_branches = []
+            
+            if branches_result.returncode == 0:
+                for line in branches_result.stdout.split('\n'):
+                    line = line.strip()
+                    if line and not line.startswith('remotes/origin/HEAD'):
+                        branch = line.replace('* ', '').replace('remotes/origin/', '')
+                        if branch not in all_branches:
+                            all_branches.append(branch)
+            
+            return {
+                "current": current_branch,
+                "all_branches": all_branches,
+                "total_count": len(all_branches)
+            }
+            
+        except Exception:
+            return {"current": "unknown", "all_branches": [], "total_count": 0}
+    
+    def get_status(self) -> dict:
+        """Get Git status information"""
+        try:
+            result = subprocess.run([
+                "git", "status", "--porcelain"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=5)
+            
+            if result.returncode != 0:
+                return {"clean": True, "changes": []}
+            
+            changes = []
+            for line in result.stdout.strip().split('\n'):
+                if line:
+                    status = line[:2]
+                    file_path = line[3:]
+                    changes.append({
+                        "status": status.strip(),
+                        "file": file_path,
+                        "type": self._interpret_git_status(status)
+                    })
+            
+            return {
+                "clean": len(changes) == 0,
+                "changes": changes,
+                "modified_count": len([c for c in changes if 'M' in c['status']]),
+                "added_count": len([c for c in changes if 'A' in c['status']]),
+                "deleted_count": len([c for c in changes if 'D' in c['status']])
+            }
+            
+        except Exception:
+            return {"clean": True, "changes": []}
+    
+    def _interpret_git_status(self, status: str) -> str:
+        """Interpret Git status codes"""
+        status_map = {
+            'M': 'modified', 'A': 'added', 'D': 'deleted', 
+            'R': 'renamed', 'C': 'copied', 'U': 'unmerged',
+            '?': 'untracked', '!': 'ignored'
+        }
+        return status_map.get(status.strip(), 'unknown')
+    
+    def get_file_activity(self, days: int = 30) -> List[dict]:
+        """Identify frequently changed files (hot spots)"""
+        try:
+            since_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            result = subprocess.run([
+                "git", "log", "--name-only", "--pretty=format:", f"--since={since_date}"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=15)
+            
+            if result.returncode != 0:
+                return []
+            
+            files = [f for f in result.stdout.split('\n') if f.strip()]
+            file_counts = Counter(files)
+            
+            return [
+                {"file": file, "changes": count, "change_frequency": count / days}
+                for file, count in file_counts.most_common(20)
+            ]
+            
+        except Exception:
+            return []
+    
+    def get_contributors(self) -> List[dict]:
+        """Get contributor information"""
+        try:
+            result = subprocess.run([
+                "git", "shortlog", "-sn", "--all"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=10)
+            
+            if result.returncode != 0:
+                return []
+            
+            contributors = []
+            for line in result.stdout.strip().split('\n'):
+                if line:
+                    parts = line.strip().split('\t', 1)
+                    if len(parts) == 2:
+                        contributors.append({
+                            "commits": int(parts[0]),
+                            "name": parts[1]
+                        })
+            
+            return contributors
+            
+        except Exception:
+            return []
+    
+    def get_project_timeline(self) -> dict:
+        """Get project timeline information"""
+        try:
+            # First commit
+            first_commit = subprocess.run([
+                "git", "log", "--reverse", "--pretty=format:%ad", "--date=iso", "-1"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=5)
+            
+            # Latest commit
+            latest_commit = subprocess.run([
+                "git", "log", "--pretty=format:%ad", "--date=iso", "-1"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=5)
+            
+            # Total commits
+            commit_count = subprocess.run([
+                "git", "rev-list", "--count", "HEAD"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=5)
+            
+            timeline = {}
+            if first_commit.returncode == 0:
+                timeline["first_commit"] = first_commit.stdout.strip()
+            if latest_commit.returncode == 0:
+                timeline["latest_commit"] = latest_commit.stdout.strip()
+            if commit_count.returncode == 0:
+                timeline["total_commits"] = int(commit_count.stdout.strip())
+            
+            return timeline
+            
+        except Exception:
+            return {}
+    
+    def get_frequently_changed_files(self, limit: int = 10) -> List[dict]:
+        """Get files that change most frequently (code hot spots)"""
+        try:
+            result = subprocess.run([
+                "git", "log", "--name-only", "--pretty=format:", "--since=3.months"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=15)
+            
+            if result.returncode != 0:
+                return []
+            
+            files = [f for f in result.stdout.split('\n') if f.strip()]
+            file_counts = Counter(files)
+            
+            hot_files = []
+            for file, count in file_counts.most_common(limit):
+                file_path = self.project_path / file
+                file_info = {
+                    "file": file,
+                    "change_count": count,
+                    "exists": file_path.exists()
+                }
+                
+                if file_path.exists():
+                    stat = file_path.stat()
+                    file_info.update({
+                        "size": stat.st_size,
+                        "lines": self._count_lines(file_path)
+                    })
+                
+                hot_files.append(file_info)
+            
+            return hot_files
+            
+        except Exception:
+            return []
+    
+    def analyze_commit_patterns(self) -> dict:
+        """Analyze commit patterns for development insights"""
+        try:
+            # Get commits with timing
+            result = subprocess.run([
+                "git", "log", "--pretty=format:%ad|%s", "--date=format:%H", 
+                "--since=1.month"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=10)
+            
+            if result.returncode != 0:
+                return {}
+            
+            hours = []
+            commit_types = defaultdict(int)
+            
+            for line in result.stdout.strip().split('\n'):
+                if '|' in line:
+                    hour, message = line.split('|', 1)
+                    hours.append(int(hour))
+                    
+                    # Categorize commit types
+                    message_lower = message.lower()
+                    if any(word in message_lower for word in ['fix', 'bug', 'error']):
+                        commit_types['fixes'] += 1
+                    elif any(word in message_lower for word in ['feat', 'add', 'new']):
+                        commit_types['features'] += 1
+                    elif any(word in message_lower for word in ['refactor', 'clean', 'improve']):
+                        commit_types['refactoring'] += 1
+                    elif any(word in message_lower for word in ['test', 'spec']):
+                        commit_types['testing'] += 1
+                    else:
+                        commit_types['other'] += 1
+            
+            hour_distribution = Counter(hours)
+            peak_hours = hour_distribution.most_common(3)
+            
+            return {
+                "peak_coding_hours": [{"hour": h, "commits": c} for h, c in peak_hours],
+                "commit_type_distribution": dict(commit_types),
+                "total_recent_commits": len(hours)
+            }
+            
+        except Exception:
+            return {}
+    
+    def analyze_branch_patterns(self) -> dict:
+        """Analyze branching patterns"""
+        try:
+            # Get branch creation dates
+            result = subprocess.run([
+                "git", "for-each-ref", "--format=%(refname:short)|%(committerdate:iso)", 
+                "refs/heads/"
+            ], capture_output=True, text=True, cwd=self.project_path, timeout=10)
+            
+            if result.returncode != 0:
+                return {}
+            
+            branches = []
+            feature_branches = 0
+            hotfix_branches = 0
+            
+            for line in result.stdout.strip().split('\n'):
+                if '|' in line:
+                    branch, date = line.split('|', 1)
+                    branches.append({"name": branch, "last_commit": date})
+                    
+                    # Categorize branch types
+                    branch_lower = branch.lower()
+                    if any(prefix in branch_lower for prefix in ['feature/', 'feat/']):
+                        feature_branches += 1
+                    elif any(prefix in branch_lower for prefix in ['hotfix/', 'fix/']):
+                        hotfix_branches += 1
+            
+            return {
+                "total_branches": len(branches),
+                "feature_branches": feature_branches,
+                "hotfix_branches": hotfix_branches,
+                "branch_details": branches[:10]  # Limit for brevity
+            }
+            
+        except Exception:
+            return {}
+    
+    def _count_lines(self, file_path: Path) -> int:
+        """Count lines in a file"""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return sum(1 for _ in f)
+        except:
+            return 0
+```
+
+---
+
+## 3. Smart Context Prioritization (Medium-High Impact)
+
+### Problem
+All files are treated equally in context building, leading to information overload.
+
+### Solution
+Implement intelligent prioritization based on relevance, usage patterns, and query intent.
+
+### Implementation
+
+#### Smart Context Builder
+```python
+# services/smart_context.py - New module
+import re
+import json
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple
+from collections import defaultdict, Counter
+from dataclasses import dataclass
+
+@dataclass
+class QueryIntent:
+    """Structured representation of user query intent"""
+    keywords: List[str]
+    domain: Optional[str]  # testing, config, api, ui, etc.
+    action: Optional[str]  # analyze, debug, implement, etc.
+    file_references: List[str]
+    confidence: float
+
+class SmartContextBuilder:
+    """
+    Intelligent context builder that prioritizes information based on relevance.
+    """
+    
+    def __init__(self, project_path: Path):
+        self.project_path = project_path
+        self.usage_tracker = UsageTracker()
+        self.file_importance_cache = {}
+        
+        # Domain keywords for categorization
+        self.domain_keywords = {
+            'testing': ['test', 'spec', 'mock', 'assert', 'pytest', 'jest'],
+            'config': ['config', 'setting', 'env', 'constant', 'parameter'],
+            'api': ['api', 'endpoint', 'route', 'request', 'response', 'http'],
+            'ui': ['component', 'view', 'template', 'style', 'css', 'html'],
+            'database': ['model', 'schema', 'migration', 'query', 'db'],
+            'security': ['auth', 'permission', 'security', 'crypto', 'hash'],
+            'performance': ['cache', 'optimize', 'performance', 'speed', 'memory']
+        }
+    
+    def build_prioritized_context(self, user_query: str = None, max_files: int = 15) -> str:
+        """Build context prioritized by relevance to current task"""
+        
+        # 1. Analyze user query for intent
+        query_intent = self.analyze_query_intent(user_query) if user_query else None
+        
+        # 2. Get all discoverable files
+        all_files = self.discover_all_files()
+        
+        # 3. Apply smart prioritization
+        prioritized_files = self.prioritize_files(all_files, query_intent, max_files)
+        
+        # 4. Build layered context
+        context = self.build_layered_context(prioritized_files, query_intent)
+        
+        # 5. Track usage for future improvements
+        if user_query:
+            self.usage_tracker.track_query(user_query, prioritized_files)
+        
+        return context
+    
+    def analyze_query_intent(self, query: str) -> QueryIntent:
+        """Analyze user query to understand intent and extract relevant information"""
+        query_lower = query.lower()
+        
+        # Extract keywords (meaningful words, not stopwords)
+        stopwords = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those'}
+        words = re.findall(r'\b\w+\b', query_lower)
+        keywords = [w for w in words if w not in stopwords and len(w) > 2]
+        
+        # Detect domain
+        domain = None
+        domain_scores = {}
+        for domain_name, domain_words in self.domain_keywords.items():
+            score = sum(1 for word in domain_words if word in query_lower)
+            if score > 0:
+                domain_scores[domain_name] = score
+        
+        if domain_scores:
+            domain = max(domain_scores, key=domain_scores.get)
+        
+        # Detect action
+        action = None
+        action_keywords = {
+            'analyze': ['analyze', 'analysis', 'review', 'examine', 'study'],
+            'debug': ['debug', 'error', 'bug', 'issue', 'problem', 'fix'],
+            'implement': ['implement', 'create', 'build', 'develop', 'add'],
+            'optimize': ['optimize', 'improve', 'performance', 'speed', 'efficient'],
+            'refactor': ['refactor', 'clean', 'reorganize', 'restructure']
+        }
+        
+        for action_name, action_words in action_keywords.items():
+            if any(word in query_lower for word in action_words):
+                action = action_name
+                break
+        
+        # Extract file references
+        file_extensions = ['.py', '.js', '.ts', '.go', '.rs', '.java', '.json', '.yml', '.yaml', '.md']
+        file_references = []
+        for ext in file_extensions:
+            pattern = rf'\b\w+{re.escape(ext)}\b'
+            file_references.extend(re.findall(pattern, query, re.IGNORECASE))
+        
+        # Calculate confidence based on how much we extracted
+        confidence = 0.0
+        if keywords:
+            confidence += 0.3
+        if domain:
+            confidence += 0.25
+        if action:
+            confidence += 0.25
+        if file_references:
+            confidence += 0.2
+        
+        return QueryIntent(
+            keywords=keywords,
+            domain=domain,
+            action=action,
+            file_references=file_references,
+            confidence=confidence
+        )
+    
+    def discover_all_files(self) -> List[Path]:
+        """Discover all relevant files in the project"""
+        relevant_extensions = {
+            '.py', '.js', '.ts', '.jsx', '.tsx', '.go', '.rs', '.java', 
+            '.json', '.yml', '.yaml', '.md', '.txt', '.sh', '.bat'
+        }
+        
+        files = []
+        for file in self.project_path.rglob('*'):
+            if (file.is_file() and 
+                file.suffix.lower() in relevant_extensions and
+                not self._should_exclude_file(file)):
+                files.append(file)
+        
+        return files
+    
+    def _should_exclude_file(self, file: Path) -> bool:
+        """Check if file should be excluded from context"""
+        exclude_patterns = [
+            '.git', '__pycache__', 'node_modules', '.venv', 'venv',
+            '.pytest_cache', '.coverage', 'dist', 'build'
+        ]
+        
+        return any(pattern in str(file) for pattern in exclude_patterns)
+    
+    def prioritize_files(self, files: List[Path], intent: Optional[QueryIntent], max_files: int) -> List[Path]:
+        """Smart file prioritization based on multiple factors"""
+        scored_files = []
+        
+        for file in files:
+            score = self.calculate_file_score(file, intent)
+            scored_files.append((file, score))
+        
+        # Sort by score and return top files
+        sorted_files = sorted(scored_files, key=lambda x: x[1], reverse=True)
+        return [f for f, _ in sorted_files[:max_files]]
+    
+    def calculate_file_score(self, file: Path, intent: Optional[QueryIntent]) -> float:
+        """Calculate comprehensive file relevance score"""
+        score = 0.0
+        
+        # Base priority by extension and file type
+        score += self.get_base_priority(file)
+        
+        # Recent activity bonus (if Git integration available)
+        score += self.get_activity_score(file)
+        
+        # User interaction history
+        score += self.usage_tracker.get_file_score(file)
+        
+        # Query relevance
+        if intent:
+            score += self.get_relevance_score(file, intent)
+        
+        # Architectural importance
+        score += self.get_architectural_score(file)
+        
+        # File size consideration (prefer moderate-sized files)
+        score += self.get_size_score(file)
+        
+        return score
+    
+    def get_base_priority(self, file: Path) -> float:
+        """Get base priority score based on file type and naming"""
+        extension_scores = {
+            '.py': 10, '.js': 9, '.ts': 9, '.go': 8, '.rs': 8, '.java': 7,
+            '.json': 6, '.yml': 6, '.yaml': 6, '.md': 4, '.txt': 3
+        }
+        
+        score = extension_scores.get(file.suffix.lower(), 1)
+        
+        # Boost important file names
+        name_lower = file.name.lower()
+        important_names = {
+            'main': 5, 'index': 5, 'app': 5, 'config': 4, 'settings': 4,
+            'routes': 4, 'models': 4,

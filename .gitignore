@@ -1,0 +1,18 @@
+# Environment variables
+.env
+
+# Python virtual environment
+VENV/
+
+# IDE and editor directories
+.vscode/
+.idea/
+
+# macOS files
+.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+
+/Users/admin/Documents/DeepCoderX/documentation/backup-routine.MD

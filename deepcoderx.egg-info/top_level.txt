@@ -1,0 +1,7 @@
+VENV
+documentation
+models
+services
+templates
+tests
+utils

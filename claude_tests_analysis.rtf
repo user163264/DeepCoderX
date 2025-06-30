@@ -1,0 +1,642 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2818
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Bold;\f1\froman\fcharset0 Times-Italic;\f2\froman\fcharset0 Times-Roman;
+\f3\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red109\green109\blue109;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\cssrgb\c50196\c50196\c50196;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid1\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid101\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid2}
+{\list\listtemplateid3\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid201\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid3}
+{\list\listtemplateid4\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid301\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid4}
+{\list\listtemplateid5\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid401\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid5}
+{\list\listtemplateid6\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid501\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid502\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid6}
+{\list\listtemplateid7\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid601\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid602\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid7}
+{\list\listtemplateid8\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid701\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid8}
+{\list\listtemplateid9\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid801\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid9}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}{\listoverride\listid3\listoverridecount0\ls3}{\listoverride\listid4\listoverridecount0\ls4}{\listoverride\listid5\listoverridecount0\ls5}{\listoverride\listid6\listoverridecount0\ls6}{\listoverride\listid7\listoverridecount0\ls7}{\listoverride\listid8\listoverridecount0\ls8}{\listoverride\listid9\listoverridecount0\ls9}}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\sa321\partightenfactor0
+
+\f0\b\fs48 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 DeepCoderX Test Suite Analysis - Issues & Solutions\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\i\b0\fs24 \cf0 December 28, 2025
+\f2\i0 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 Executive Summary\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f2\b0\fs24 \cf0 The DeepCoderX test suite contains 
+\f0\b 7 test files
+\f2\b0  with 
+\f0\b comprehensive test coverage
+\f2\b0  but 
+\f0\b multiple critical issues
+\f2\b0  preventing successful execution. The tests are well-written and follow good testing practices, but suffer from 
+\f0\b dependency, import, and configuration problems
+\f2\b0 .\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 Test Suite Status: \uc0\u10060  FAILING\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls1\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Primary Cause
+\f2\b0 : Missing 
+\f3\fs26 requests-mock
+\f2\fs24  dependency\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Secondary Issues
+\f2\b0 : Import path inconsistencies, patch decorator problems\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Complexity
+\f2\b0 : Medium - fixable with dependency installation and path corrections\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 1. Test Files Overview\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u55357 \u56513  Test Structure Analysis\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 tests/\
+\uc0\u9500 \u9472 \u9472  test_mcp_services.py          # MCP client/server testing \u9989  Well-written\
+\uc0\u9500 \u9472 \u9472  test_command_router.py         # Command routing logic \u9989  Good coverage  \
+\uc0\u9500 \u9472 \u9472  test_filesystem_handler.py     # File operations testing \u9989  Proper mocking\
+\uc0\u9500 \u9472 \u9472  test_llm_handlers.py          # AI model handlers \u9989  Comprehensive\
+\uc0\u9500 \u9472 \u9472  test_auto_implement_handler.py # Code implementation \u9989  Good structure\
+\uc0\u9500 \u9472 \u9472  test_integration.py           # End-to-end testing \u9989  Integration focus\
+\uc0\u9492 \u9472 \u9472  test_tool_loop.py             # Tool execution loops \u9989  Complex scenarios\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55356 \u57263  Test Quality Assessment: Excellent\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls2\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Comprehensive Coverage
+\f2\b0 : Tests cover all major components\
+\ls2\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Good Mocking Strategy
+\f2\b0 : Proper use of mocks and patches\
+\ls2\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Realistic Scenarios
+\f2\b0 : Tests simulate real usage patterns\
+\ls2\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Edge Case Handling
+\f2\b0 : Tests include error conditions\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 2. Critical Issues Identified\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u55357 \u57000  Issue #1: Missing Dependency - requests-mock\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Severity
+\f2\b0 : 
+\f0\b CRITICAL
+\f2\b0  \uc0\u10060 \u8232 
+\f0\b Status
+\f2\b0 : Not installed in virtual environment\
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Found in requirements.txt but NOT installed\
+requests-mock>=1.9.3\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b\fs24 \cf0 Impact
+\f2\b0 :\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls3\ilvl0\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Tests making HTTP requests will fail\
+\ls3\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 MCP client tests cannot mock HTTP responses properly\
+\ls3\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Integration tests that use web requests will crash\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b \cf0 Evidence
+\f2\b0 :\
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # In VENV/lib/python3.13/site-packages/\
+\uc0\u9989  pytest_mock-3.14.1.dist-info        # INSTALLED\
+\uc0\u10060  requests_mock                        # MISSING\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs24 \cf3 \strokec3 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \strokec2 \uc0\u55357 \u57000  Issue #2: Inconsistent Import Paths\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Severity
+\f2\b0 : 
+\f0\b HIGH
+\f2\b0  \uc0\u9888 \u65039 \u8232 
+\f0\b Status
+\f2\b0 : Multiple files affected\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\f0\b \cf0 Problematic Patch Decorators:\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 # \uc0\u10060  INCORRECT - in test_integration.py & test_tool_loop.py\
+@patch('DeepCoderX.services.llm_handler.Llama')\
+\
+# \uc0\u9989  CORRECT - should be  \
+@patch('services.llm_handler.Llama')\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\f0\b\fs24 \cf0 Files with Wrong Paths:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls4\ilvl0\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_integration.py
+\f2\b0 : Line ~35\
+\ls4\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_tool_loop.py
+\f2\b0 : Line ~8\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b \cf0 Impact
+\f2\b0 :\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls5\ilvl0\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Patch decorators fail to find target modules\
+\ls5\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Tests cannot properly mock dependencies\
+\ls5\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 ImportError or AttributeError exceptions\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \strokec2 \uc0\u55357 \u57000  Issue #3: PYTHONPATH Configuration\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Severity
+\f2\b0 : 
+\f0\b MEDIUM
+\f2\b0  \uc0\u9888 \u65039 \u8232 
+\f0\b Status
+\f2\b0 : Environment setup issue\
+
+\f0\b Problem
+\f2\b0 : Tests expect to import from project root but PYTHONPATH not configured\
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # These imports will fail if not run from project root\
+from services.mcpclient import MCPClient\
+from models.router import CommandProcessor  \
+from services.llm_handler import FilesystemCommandHandler\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f0\b\fs24 \cf0 Current pytest.ini
+\f2\b0 :\
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 [pytest]\
+pythonpath = .\
+norecursedirs = VENV templates\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs24 \cf3 \strokec3 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \strokec2 \uc0\u55357 \u57000  Issue #4: Virtual Environment Not Activated\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Severity
+\f2\b0 : 
+\f0\b MEDIUM
+\f2\b0  \uc0\u9888 \u65039 \u8232 
+\f0\b Status
+\f2\b0 : Runtime environment issue\
+
+\f0\b Problem
+\f2\b0 : Tests likely run with system Python instead of VENV Python\
+
+\f0\b Virtual Environment Details
+\f2\b0 :\
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 Location: /Users/admin/Documents/DeepCoderX/VENV\
+Python: 3.13.5\
+Executable: /opt/homebrew/Cellar/python@3.13/3.13.5/...\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs24 \cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 3. Detailed Test File Analysis\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u55357 \u56523  test_mcp_services.py - MCP Client Testing\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Status
+\f2\b0 : \uc0\u9989  
+\f0\b Well-Structured
+\f2\b0 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Good test patterns:\
+\uc0\u9989  Proper fixture usage with pytest.fixture\
+\uc0\u9989  Comprehensive mock setup with MagicMock\
+\uc0\u9989  Tests both success and error scenarios\
+\uc0\u9989  Clean separation of concerns\
+\
+# Potential issues:\
+\uc0\u9888 \u65039  May need requests-mock for HTTP testing\
+\uc0\u9888 \u65039  Mock setup assumes specific MCP client structure\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56523  test_command_router.py - Command Routing\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Status
+\f2\b0 : \uc0\u9989  
+\f0\b Excellent Coverage
+\f2\b0 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Strengths:\
+\uc0\u9989  Tests handler routing logic thoroughly\
+\uc0\u9989  Includes middleware testing\
+\uc0\u9989  Good mock handler implementations\
+\uc0\u9989  Tests fallback behavior\
+\
+# Minor issues:\
+\uc0\u9888 \u65039  Assumes specific CommandContext structure\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56523  test_filesystem_handler.py - File Operations\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Status
+\f2\b0 : \uc0\u9888 \u65039  
+\f0\b Import Path Issues
+\f2\b0 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Problems identified:\
+\uc0\u10060  @patch('services.llm_handler.config')\
+\uc0\u10060  @patch('services.llm_handler.NLUParser') \
+\
+# Should be:\
+\uc0\u9989  @patch('config.config') or similar\
+\uc0\u9989  @patch('services.nlu_parser.NLUParser')\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56523  test_llm_handlers.py - AI Model Testing\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Status
+\f2\b0 : \uc0\u9989  
+\f0\b Comprehensive
+\f2\b0 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Excellent test design:\
+\uc0\u9989  Proper Llama model mocking\
+\uc0\u9989  Tests file mention functionality (@filename)\
+\uc0\u9989  Tests conversation history management\
+\uc0\u9989  Tests tool execution integration\
+\
+# Potential issues:\
+\uc0\u9888 \u65039  Depends on llama-cpp-python being available\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56523  test_auto_implement_handler.py - Implementation Testing\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Status
+\f2\b0 : \uc0\u9989  
+\f0\b Good Structure
+\f2\b0 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Good test patterns:\
+\uc0\u9989  Tests response parsing logic\
+\uc0\u9989  Tests file writing through MCP\
+\uc0\u9989  Realistic sample model responses\
+\uc0\u9989  Tests path resolution\
+\
+# Strengths:\
+\uc0\u9989  Tests complex regex parsing scenarios\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56523  test_integration.py - End-to-End Testing\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Status
+\f2\b0 : \uc0\u10060  
+\f0\b Critical Path Issues
+\f2\b0 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Major problems:\
+\uc0\u10060  @patch('DeepCoderX.services.llm_handler.Llama')  # Wrong path\
+\uc0\u10060  Import path inconsistencies\
+\uc0\u10060  May fail due to missing requests-mock\
+\
+# Good concepts:\
+\uc0\u9989  Real component integration\
+\uc0\u9989  Temporary directory usage\
+\uc0\u9989  Full workflow testing\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56523  test_tool_loop.py - Tool Execution Testing\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Status
+\f2\b0 : \uc0\u10060  
+\f0\b Path Issues
+\f2\b0 \
+\pard\pardeftab720\partightenfactor0
+
+\f3\fs26 \cf0 # Problems:\
+\uc0\u10060  @patch('DeepCoderX.services.llm_handler.Llama')  # Wrong path\
+\uc0\u10060  Complex multi-tool scenarios may be fragile\
+\
+# Strengths:\
+\uc0\u9989  Tests tool calling loops\
+\uc0\u9989  Tests JSON parsing edge cases\
+\uc0\u9989  Tests multiple tool calls in sequence\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs24 \cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 4. Root Cause Analysis\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u55357 \u56589  Primary Root Causes:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls6\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Dependency Management Failure
+\f2\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls6\ilvl1
+\f3\fs26 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 requests-mock
+\f2\fs24  in requirements.txt but not installed\
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls6\ilvl1\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Virtual environment may not have been fully set up\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls6\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Import Path Confusion
+\f2\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls6\ilvl1\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Inconsistent use of 
+\f3\fs26 DeepCoderX.
+\f2\fs24  prefix in patches\
+\ls6\ilvl1\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Tests written assuming different working directory\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls6\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Development Environment Issues
+\f2\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls6\ilvl1\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Tests may have been written in different environment\
+\ls6\ilvl1\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Virtual environment activation issues\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls6\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Package Structure Assumptions
+\f2\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls6\ilvl1\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Some tests expect DeepCoderX as installable package\
+\ls6\ilvl1\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Others expect direct directory imports\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 5. Specific Error Scenarios\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u10060  Expected Test Failures:\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 # 1. ImportError - Missing requests-mock\
+ModuleNotFoundError: No module named 'requests_mock'\
+\
+# 2. AttributeError - Wrong patch paths  \
+AttributeError: module 'DeepCoderX.services.llm_handler' has no attribute 'Llama'\
+\
+# 3. ImportError - Path resolution\
+ModuleNotFoundError: No module named 'services'\
+\
+# 4. Missing fixture - pytest-mock issues\
+fixture 'mocker' not found\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs24 \cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 6. Solutions & Fixes\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u55357 \u56615  Immediate Fixes Required:\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\fs24 \cf0 Fix #1: Install Missing Dependencies\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 # Activate virtual environment and install missing packages\
+cd /Users/admin/Documents/DeepCoderX\
+source VENV/bin/activate\
+pip install requests-mock>=1.9.3\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\f0\b\fs24 \cf0 Fix #2: Correct Import Paths\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 # In test_integration.py and test_tool_loop.py\
+# Change:\
+@patch('DeepCoderX.services.llm_handler.Llama')\
+# To:\
+@patch('services.llm_handler.Llama')\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\f0\b\fs24 \cf0 Fix #3: Ensure Proper Working Directory\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 # Run tests from project root\
+cd /Users/admin/Documents/DeepCoderX\
+python -m pytest tests/ -v\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\f0\b\fs24 \cf0 Fix #4: Verify Virtual Environment\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 # Ensure using VENV Python\
+/Users/admin/Documents/DeepCoderX/VENV/bin/python -m pytest tests/ -v\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56615  Additional Improvements:\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\fs24 \cf0 Update pytest.ini:\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 [pytest]\
+pythonpath = .\
+testpaths = tests\
+python_files = test_*.py\
+python_classes = Test*\
+python_functions = test_*\
+norecursedirs = VENV templates __pycache__ .git\
+addopts = -v --tb=short\
+\pard\pardeftab720\sa319\partightenfactor0
+
+\f0\b\fs24 \cf0 Add conftest.py for shared fixtures:\
+\pard\pardeftab720\partightenfactor0
+
+\f3\b0\fs26 \cf0 # tests/conftest.py\
+import pytest\
+from pathlib import Path\
+import sys\
+\
+# Add project root to path\
+sys.path.insert(0, str(Path(__file__).parent.parent))\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs24 \cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 7. Test Execution Plan\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u55357 \u56523  Step-by-Step Fixing Process:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls7\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Environment Setup
+\f2\b0  (5 min)\uc0\u8232 
+\f3\fs26 cd /Users/admin/Documents/DeepCoderX\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls7\ilvl0\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 source VENV/bin/activate\
+\ls7\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 pip install requests-mock>=1.9.3\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls7\ilvl0
+\f2\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls7\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	5	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Fix Import Paths
+\f2\b0  (10 min)\
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\partightenfactor0
+\ls7\ilvl1\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Edit test_integration.py: Fix @patch decorator\
+\ls7\ilvl1\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Edit test_tool_loop.py: Fix @patch decorator\
+\ls7\ilvl1\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Edit test_filesystem_handler.py: Fix patch paths\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls7\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	6	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Run Individual Tests
+\f2\b0  (15 min)\uc0\u8232 
+\f3\fs26 # Test each file individually\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls7\ilvl0\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	7	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 python -m pytest tests/test_mcp_services.py -v\
+\ls7\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	8	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 python -m pytest tests/test_command_router.py -v\
+\ls7\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	9	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 python -m pytest tests/test_filesystem_handler.py -v\
+\ls7\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	10	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 # ... etc\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls7\ilvl0
+\f2\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	11	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls7\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	12	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Run Full Suite
+\f2\b0  (5 min)\uc0\u8232 
+\f3\fs26 python -m pytest tests/ -v\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls7\ilvl0
+\f2\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	13	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \uc0\u55357 \u56522  Expected Results After Fixes:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls8\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_mcp_services.py
+\f2\b0 : \uc0\u9989  PASS (5/5 tests)\
+\ls8\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_command_router.py
+\f2\b0 : \uc0\u9989  PASS (3/3 tests)\
+\ls8\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_filesystem_handler.py
+\f2\b0 : \uc0\u9989  PASS (2/2 tests)\
+\ls8\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_llm_handlers.py
+\f2\b0 : \uc0\u9989  PASS (4/4 tests)\
+\ls8\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_auto_implement_handler.py
+\f2\b0 : \uc0\u9989  PASS (2/2 tests)\
+\ls8\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_integration.py
+\f2\b0 : \uc0\u9989  PASS (1/1 tests)\
+\ls8\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 test_tool_loop.py
+\f2\b0 : \uc0\u9989  PASS (3/3 tests)\
+\pard\pardeftab720\partightenfactor0
+\cf3 \strokec3 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 8. Quality Assessment\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\fs28 \cf0 \uc0\u9989  Test Suite Strengths:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls9\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Comprehensive Coverage
+\f2\b0 : All major components tested\
+\ls9\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Good Testing Practices
+\f2\b0 : Proper mocking, fixtures, parametrization\
+\ls9\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Realistic Scenarios
+\f2\b0 : Tests\
+}

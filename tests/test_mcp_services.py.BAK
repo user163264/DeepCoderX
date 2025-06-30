@@ -1,0 +1,105 @@
+import pytest
+import requests
+from unittest.mock import MagicMock
+from services.mcpclient import MCPClient
+
+# This fixture provides a client instance for each test function.
+@pytest.fixture
+def mcp_client(mocker):
+    client = MCPClient(endpoint="http://test.server:8080", api_key="test-key")
+    client.session = mocker.MagicMock()
+    return client
+
+# --- MCPClient Method Tests ---
+
+def test_read_file_success(mcp_client, mocker):
+    """Tests a successful file read call."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"content": "hello world"}
+    mcp_client.session.get = MagicMock(return_value=mock_response)
+
+    result = mcp_client.read_file("test.txt")
+
+    mcp_client.session.get.assert_called_once_with(
+        "http://test.server:8080/read",
+        params={"file": "test.txt"},
+        headers={"X-API-Key": "test-key"},
+        timeout=10
+    )
+    assert result == {"content": "hello world"}
+
+def test_write_file_success(mcp_client, mocker):
+    """Tests a successful file write call."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"status": "success"}
+    mcp_client.session.post = MagicMock(return_value=mock_response)
+
+    result = mcp_client.write_file("new.txt", "some content")
+
+    mcp_client.session.post.assert_called_once_with(
+        "http://test.server:8080/write",
+        json={"file": "new.txt", "content": "some content"},
+        headers={"X-API-Key": "test-key"},
+        timeout=10
+    )
+    assert result == {"status": "success"}
+
+def test_list_dir_success(mcp_client, mocker):
+    """Tests a successful directory listing call."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"files": ["a.txt"], "directories": ["d1"]}
+    mcp_client.session.get = MagicMock(return_value=mock_response)
+
+    result = mcp_client.list_dir(".")
+
+    mcp_client.session.get.assert_called_once_with(
+        "http://test.server:8080/list",
+        params={"path": "."},
+        headers={"X-API-Key": "test-key"},
+        timeout=10
+    )
+    assert result == {"files": ["a.txt"], "directories": ["d1"]}
+
+def test_delete_path_success(mcp_client, mocker):
+    """Tests a successful path deletion call."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"status": "success"}
+    mcp_client.session.post = MagicMock(return_value=mock_response)
+
+    result = mcp_client.delete_path("path/to/delete", recursive=True)
+
+    mcp_client.session.post.assert_called_once_with(
+        "http://test.server:8080/delete",
+        json={"path": "path/to/delete", "recursive": True},
+        headers={"X-API-Key": "test-key"},
+        timeout=10
+    )
+    assert result == {"status": "success"}
+
+
+# --- MCPClient Error Handling Tests ---
+
+def test_client_handles_http_error(mcp_client, mocker):
+    """Tests that the client correctly handles a non-200 HTTP status code."""
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.json.return_value = {"error": "File not found"}
+    mcp_client.session.get = MagicMock(return_value=mock_response)
+
+    result = mcp_client.read_file("not_found.txt")
+
+    assert "error" in result
+    assert result["error"] == "File not found"
+
+def test_client_handles_network_error(mcp_client, mocker):
+    """Tests that the client returns a custom error on network issues."""
+    mcp_client.session.get.side_effect = requests.exceptions.RequestException("Connection Error")
+
+    result = mcp_client.read_file("any.txt")
+
+    assert "error" in result
+    assert "MCP request failed: Connection Error" in result["error"]
