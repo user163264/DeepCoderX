@@ -3,8 +3,7 @@
 import sys
 import os
 from typing import Any
-# from models.session import CommandContext
-from .session import CommandContext  # Use relative import
+from .session import CommandContext
 class CommandHandler:
     def __init__(self, context: CommandContext):
         self.ctx = context

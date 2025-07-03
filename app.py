@@ -28,10 +28,17 @@ from models.router import CommandProcessor, CommandHandler
 from services.llm_handler import (
     SecurityMiddleware, 
     FilesystemCommandHandler,
-    DeepSeekAnalysisHandler,
     AutoImplementHandler,
-    LocalCodingHandler
+    LocalCodingHandler  # Legacy - deprecated in favor of LocalOpenAIHandler
 )
+# Import new OpenAI-compatible handlers
+try:
+    from services.unified_openai_handler import LocalOpenAIHandler, CloudOpenAIHandler
+    OPENAI_HANDLERS_AVAILABLE = True
+    OPENAI_IMPORT_ERROR = None
+except ImportError as e:
+    OPENAI_HANDLERS_AVAILABLE = False
+    OPENAI_IMPORT_ERROR = str(e)
 from services.mcpserver import start_mcp_server
 from services.mcpclient import MCPClient
 
@@ -102,9 +109,39 @@ def main():
     processor = CommandProcessor(ctx)
     processor.add_middleware(SecurityMiddleware(ctx))
     processor.add_handler(FilesystemCommandHandler(ctx))
-    processor.add_handler(DeepSeekAnalysisHandler(ctx))
-    processor.add_handler(AutoImplementHandler(ctx))
-    processor.add_handler(LocalCodingHandler(ctx))
+    
+    # Display OpenAI import warning if needed
+    if not OPENAI_HANDLERS_AVAILABLE and OPENAI_IMPORT_ERROR:
+        console.print(f"[yellow]Warning:[/] OpenAI handlers not available: {OPENAI_IMPORT_ERROR}")
+        console.print("[yellow]Falling back to legacy handlers. Run: pip install openai>=1.0.0[/]")
+        console.print()
+    
+    # MIGRATION PHASE 1: Prioritize Unified Handlers
+    if OPENAI_HANDLERS_AVAILABLE:
+        try:
+            # Primary: Use unified OpenAI-compatible handlers
+            processor.add_handler(CloudOpenAIHandler(ctx, "deepseek"))
+            processor.add_handler(LocalOpenAIHandler(ctx))
+            processor.add_handler(AutoImplementHandler(ctx))
+            
+            # Legacy handler as last resort fallback only
+            # Note: LocalCodingHandler is deprecated in favor of LocalOpenAIHandler
+            processor.add_handler(LocalCodingHandler(ctx))
+            
+            if ctx.debug_mode:
+                console.print("[bold green]✓ Unified Architecture Handlers Active[/]")
+                console.print(f"[green]✓ Available providers: {', '.join(config.PROVIDERS.keys())}[/]")
+                console.print("[dim]Note: Legacy LocalCodingHandler available as fallback[/]")
+                
+        except Exception as e:
+            console.print(f"[yellow]Warning:[/] Unified handlers failed, using legacy: {e}")
+            # Fallback to legacy handlers
+            processor.add_handler(AutoImplementHandler(ctx))
+            processor.add_handler(LocalCodingHandler(ctx))
+    else:
+        # Use legacy handlers only
+        processor.add_handler(AutoImplementHandler(ctx))
+        processor.add_handler(LocalCodingHandler(ctx))
 
     # Add a fallback handler for unknown commands
     class NotFoundHandler(CommandHandler):
@@ -118,21 +155,43 @@ def main():
    
     logo = Text(r"""
 
-
-
-            DeepCoderX
-                                                                                   
-
-          
-                                                                                 
-                                                                                 
-    """, justify="center", style="bold magenta")
+#  ██████╗ ███████╗███████╗██████╗  ██████╗ ██████╗ ██████╗ ███████╗██████╗ ██╗  ██╗
+#  ██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗╚██╗██╔╝
+#  ██║  ██║█████╗  █████╗  ██████╔╝██║     ██║   ██║██║  ██║█████╗  ██████╔╝ ╚███╔╝ 
+#  ██║  ██║██╔══╝  ██╔══╝  ██╔═══╝ ██║     ██║   ██║██║  ██║██╔══╝  ██╔══██╗ ██╔██╗ 
+#  ██████╔╝███████╗███████╗██║     ╚██████╗╚██████╔╝██████╔╝███████╗██║  ██║██╔╝ ██╗
+#  ╚═════╝ ╚══════╝╚══════╝╚═╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
+#                                                                                   
+            """, justify="center", style="bold magenta")
     console.print(Panel(logo, border_style="#9c9a9a"))
     
+    # Create status message with provider info and migration status
+    status_parts = [f"[bold]DeepCoderX[/] | [green]Project:[/] {project_dir.name}"]
+    
+    if OPENAI_HANDLERS_AVAILABLE:
+        enabled_providers = [name for name, cfg in config.PROVIDERS.items() if cfg['enabled']]
+        if enabled_providers:
+            status_parts.append(f"[blue]Providers:[/] {', '.join(enabled_providers)}")
+        status_parts.append(f"[yellow]Default:[/] {config.DEFAULT_PROVIDER}")
+        status_parts.append("[green]Architecture:[/] Unified")
+    else:
+        status_parts.append("[yellow]Architecture:[/] Legacy")
+    
     console.print(Panel(
-        f"[bold]DeepCoderX[/] | [green]Project:[/] {project_dir.name}",
+        " | ".join(status_parts),
         border_style="#9c9a9a"
     ))
+    
+    # Migration status notification
+    if OPENAI_HANDLERS_AVAILABLE:
+        console.print("[bold green]🎉 Running with Unified Architecture![/]")
+        console.print("[dim]• Tool Registry Pattern active")
+        console.print("[dim]• Standardized error handling")
+        console.print("[dim]• Consistent tool calling across all models[/]")
+    else:
+        console.print("[bold yellow]⚠️  Running with Legacy Handlers[/]")
+        console.print("[dim]Consider upgrading: pip install openai>=1.0.0[/]")
+    
     console.print("[dim]Type 'exit' or 'quit' to end the session.[/]")
 
     while True:
@@ -143,16 +202,29 @@ def main():
             if user_input.lower() in ('exit', 'quit'):
                 raise KeyboardInterrupt
             if user_input.lower() == 'clear':
+                cleared_handlers = []
                 for handler in processor.handlers:
-                    if isinstance(handler, LocalCodingHandler):
+                    if hasattr(handler, 'clear_history'):
                         handler.clear_history()
-                console.print("[green]Local conversation history cleared.[/]")
+                        cleared_handlers.append(type(handler).__name__)
+                if cleared_handlers:
+                    console.print(f"[green]Conversation history cleared for: {', '.join(cleared_handlers)}[/]")
+                else:
+                    console.print("[yellow]No handlers with conversation history found.[/]")
                 continue
-            if user_input.lower() == '@deepseek clear':
+            
+            # Handle provider-specific clear commands
+            if user_input.lower().startswith('@') and 'clear' in user_input.lower():
+                provider_name = user_input.lower().split()[0][1:]  # Remove @ and get provider name
+                cleared = False
                 for handler in processor.handlers:
-                    if isinstance(handler, DeepSeekAnalysisHandler):
+                    if hasattr(handler, 'provider_name') and handler.provider_name == provider_name:
                         handler.clear_history()
-                console.print("[green]DeepSeek conversation history cleared.[/]")
+                        console.print(f"[green]{provider_name.title()} conversation history cleared.[/]")
+                        cleared = True
+                        break
+                if not cleared:
+                    console.print(f"[yellow]No {provider_name} handler found.[/]")
                 continue
 
             with Progress(

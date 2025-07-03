@@ -10,14 +10,17 @@ import requests
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from llama_cpp import Llama
-
 from config import config
 from utils.logging import console, log_api_usage
 from services.context_builder import CodeContextBuilder
 from models.session import CommandContext
 from models.router import CommandHandler
 from services.nlu_parser import NLUParser
+from services.tool_executor import ToolExecutor
+from services.structured_tools import EnhancedToolExecutor, ToolCallResult
+
+# Import new unified OpenAI handlers
+from services.unified_openai_handler import LocalOpenAIHandler, CloudOpenAIHandler
 
 class SecurityMiddleware(CommandHandler):
     UNSAFE_PATTERNS = [
@@ -168,7 +171,7 @@ No command specified for execution."""
                     shell=True, 
                     capture_output=True, 
                     text=True, 
-                    timeout=30, # 30-second timeout
+                    timeout=config.SHORT_COMMAND_TIMEOUT,
                     cwd=self.ctx.current_dir
                 )
                 stdout = process.stdout.strip()
@@ -190,6 +193,8 @@ The command intent '{intent}' is not yet implemented."""
 
 from services.context_manager import ContextManager
 
+# Legacy DeepSeek handler - kept for backward compatibility
+# New deployments should use CloudOpenAIHandler
 class DeepSeekAnalysisHandler(CommandHandler):
     ANALYSIS_KEYWORDS = {
         r'\barchitecture\b', r'\breview\b', r'\brefactor\b', r'\bdependencies\b',
@@ -200,6 +205,7 @@ class DeepSeekAnalysisHandler(CommandHandler):
     def __init__(self, context: CommandContext):
         super().__init__(context)
         self.session_file = self.ctx.root_path / ".deepcoderx" / "deepseek_session.json"
+        self.tool_executor = ToolExecutor(self.ctx, use_complex_path_resolution=False)
         self._load_history()
 
     def _load_history(self):
@@ -263,7 +269,7 @@ class DeepSeekAnalysisHandler(CommandHandler):
         else:
             self.message_history.append({"role": "user", "content": user_prompt})
 
-        max_tool_calls = 50
+        max_tool_calls = config.MAX_TOOL_CALLS
         for i in range(max_tool_calls):
             # Check if we are about to exceed the limit and prompt the user
             if i == max_tool_calls - 1:
@@ -319,8 +325,8 @@ class DeepSeekAnalysisHandler(CommandHandler):
             self.ctx.response = "[red]Error:[/] Exceeded maximum tool calls (10)."
 
         # Maintain a reasonable history size
-        if len(self.message_history) > 10:
-            self.message_history = [self.message_history[0]] + self.message_history[-8:]
+        if len(self.message_history) > config.HISTORY_TRIM_SIZE:
+            self.message_history = [self.message_history[0]] + self.message_history[-config.HISTORY_KEEP_SIZE:]
 
     def _get_model_response(self, message_history: List[Dict[str, str]]) -> str:
         try:
@@ -334,7 +340,7 @@ class DeepSeekAnalysisHandler(CommandHandler):
                 config.DEEPSEEK_API_URL, 
                 headers=headers, 
                 json=payload, 
-                timeout=90
+                timeout=config.API_REQUEST_TIMEOUT
             )
             response.raise_for_status()
             log_api_usage("deepseek", response.json().get("usage", {}).get("total_tokens", 0))
@@ -343,43 +349,8 @@ class DeepSeekAnalysisHandler(CommandHandler):
             return f"[red]API Error:[/] {str(e)}"
 
     def _execute_tool(self, tool_call: Dict[str, Any]) -> str:
-        tool_name = tool_call.get("tool")
-
-        if tool_name == "delete_path":
-            return "[red]Error:[/] The 'delete_path' tool is disabled."
-
-        if tool_name == "run_bash":
-            command = tool_call.get("command")
-            if not command:
-                return "[red]Error:[/] Command is required for run_bash."
-            try:
-                process = subprocess.run(
-                    command, shell=True, capture_output=True, text=True, timeout=120, cwd=self.ctx.current_dir
-                )
-                return f"STDOUT:\n{process.stdout}\nSTDERR:\n{process.stderr}"
-            except Exception as e:
-                return f"[red]Error:[/] Failed to execute command: {e}"
-        
-        path = tool_call.get("path")
-        if not path:
-            return "[red]Error:[/] Path is required for file operations."
-
-        if tool_name == "read_file":
-            return self.ctx.mcp_client.read_file(path).get("content", "File not found.")
-        elif tool_name == "list_dir":
-            response = self.ctx.mcp_client.list_dir(path)
-            if "result" in response:
-                items = response["result"]
-                files = items.get("files", [])
-                dirs = items.get("directories", [])
-                return f"Directory listing for '{path}':\nFiles: {files}\nDirectories: {dirs}"
-            else:
-                return f"[red]Error:[/] {response.get('error', 'Failed to list directory.')}"
-        elif tool_name == "write_file":
-            content = tool_call.get("content", "")
-            return self.ctx.mcp_client.write_file(path, content).get("status", "Failed")
-        else:
-            return f"[red]Error:[/] Unknown tool: {tool_name}"
+        """Execute a tool using the shared ToolExecutor."""
+        return self.tool_executor.execute_tool(tool_call)
 
     def clear_history(self):
         """Resets the conversation history and deletes the session file."""
@@ -450,27 +421,40 @@ class AutoImplementHandler(CommandHandler):
 
         return f"✅ Updated {target_path}"
 
+# Legacy Local handler - kept for backward compatibility
+# New deployments should use LocalOpenAIHandler
 class LocalCodingHandler(CommandHandler):
     def __init__(self, context: CommandContext):
         super().__init__(context)
+        # Import llama_cpp here since this is legacy handler
+        from llama_cpp import Llama
+        self.Llama = Llama
         self.session_file = self.ctx.root_path / ".deepcoderx" / "local_session.json"
+        self.tool_executor = ToolExecutor(self.ctx, use_complex_path_resolution=True)
+        self.enhanced_executor = EnhancedToolExecutor(self.tool_executor, debug=self.ctx.debug_mode if hasattr(self.ctx, 'debug_mode') else False)
+        self._llm = None  # Lazy loading
         self._load_history()
 
-        # Initialize the model, suppressing the noisy startup logs
-        with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            self.llm = Llama(model_path=config.LOCAL_MODEL_PATH, n_ctx=8192, verbose=False)
+    @property
+    def llm(self):
+        """Lazy load the model on first access."""
+        if self._llm is None:
+            if self.ctx.debug_mode:
+                console.print("[bold yellow]Loading local model...[/]")
+            # Initialize the model, suppressing the noisy startup logs
+            with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+                self._llm = self.Llama(model_path=config.LOCAL_MODEL_PATH, n_ctx=config.MODEL_CONTEXT_SIZE, verbose=False)
+            if self.ctx.debug_mode:
+                console.print("[bold green]Local model loaded successfully![/]")
+        return self._llm
 
     def _load_history(self):
-        if self.session_file.exists():
-            with open(self.session_file, "r") as f:
-                self.message_history = json.load(f)
-        else:
-            # Start with a clean system prompt without pre-loading the entire project context.
-            # This creates the 'new buffer' you requested and prevents exceeding the token limit on startup.
-            system_prompt = config.LOCAL_SYSTEM_PROMPT + f"\n\n**Current Configuration**:\n{config.CURRENT_CONFIG}"
-            self.message_history = [
-                {"role": "system", "content": system_prompt},
-            ]
+        # Always start with a clean system prompt to ensure the latest instructions are used.
+        # This helps in resetting any problematic internal state the model might have developed.
+        system_prompt = config.LOCAL_SYSTEM_PROMPT + f"\n\n**Current Configuration**:\n{config.CURRENT_CONFIG}"
+        self.message_history = [
+            {"role": "system", "content": system_prompt},
+        ]
 
     def _save_history(self):
         self.session_file.parent.mkdir(parents=True, exist_ok=True)
@@ -513,7 +497,8 @@ class LocalCodingHandler(CommandHandler):
         self.message_history.append({"role": "user", "content": user_prompt})
 
         # --- Tool-Use Loop ---
-        max_tool_calls = 50
+        max_tool_calls = config.MAX_TOOL_CALLS
+        recent_tool_calls = []  # Track recent tool calls for loop detection
         for i in range(max_tool_calls):
             # Check if we are about to exceed the limit and prompt the user
             if i == max_tool_calls - 1:
@@ -531,26 +516,58 @@ class LocalCodingHandler(CommandHandler):
             self.ctx.status_message = "Thinking..."
             model_response_text = self._generate_response()
 
-            # Use findall to capture all tool calls in the response
-            tool_call_matches = re.findall(r'\{.*?\}', model_response_text, re.DOTALL)
+            if self.ctx.debug_mode:
+                console.print(f"\n[bold blue]-- Raw Model Response --[/]\n{model_response_text}")
+
+            # NEW: Use structured tool calling system
+            tool_results = self.enhanced_executor.execute_structured_calls(model_response_text)
             
-            if tool_call_matches:
-                tool_results = []
-                for tool_call_json in tool_call_matches:
-                    try:
-                        response_json = json.loads(tool_call_json)
-                        if "tool" in response_json:
-                            self.ctx.status = f"Using tool: {response_json['tool']}..."
-                            tool_results.append(self._execute_tool(response_json))
-                    except json.JSONDecodeError:
-                        # Ignore invalid JSON, treat as text
-                        tool_results.append(f"Invalid JSON in tool call: {tool_call_json}")
+            # Update status based on tool execution
+            if tool_results:
+                executed_tools = [r.tool_name for r in tool_results if r.tool_name]
+                if executed_tools:
+                    self.ctx.status = f"Executed: {', '.join(executed_tools)}"
+                else:
+                    self.ctx.status = "Processing tools..."
+            
+            # Loop detection: check if we're repeating the same tool calls
+            if tool_results:
+                # Extract just the actual tool call for comparison
+                tool_call_match = re.search(r'\{.*?\}', model_response_text, re.DOTALL)
+                tool_call_signature = None
+                if tool_call_match:
+                    tool_call_signature = tool_call_match.group(0).strip()
                 
-                # If any tools were executed, feed all results back to the model
-                if tool_results:
-                    self.message_history.append({"role": "assistant", "content": model_response_text})
-                    self.message_history.append({"role": "user", "content": f"Tool Results: \n" + "\n".join(tool_results)})
-                    continue
+                # Only detect immediate repetition (same tool call back-to-back)
+                if tool_call_signature and len(recent_tool_calls) > 0 and recent_tool_calls[-1] == tool_call_signature:
+                    if self.ctx.debug_mode:
+                        console.print("[bold yellow]-- Loop Detected: Same tool call repeated immediately, forcing final answer --[/]")
+                    # Use the actual tool results for a helpful response
+                    if tool_results and tool_results[0].result:
+                        latest_result = tool_results[0].result
+                        self.ctx.response = f"Based on the results: {latest_result}"
+                    else:
+                        self.ctx.response = "Task completed successfully."
+                    self.message_history.append({"role": "assistant", "content": self.ctx.response})
+                    break
+                
+                # Add to recent calls (keep only last 2 for immediate loop detection)
+                if tool_call_signature:
+                    recent_tool_calls.append(tool_call_signature)
+                    if len(recent_tool_calls) > 2:
+                        recent_tool_calls.pop(0)
+            
+            if tool_results:
+                # If any tools were executed, format results and feed back to the model
+                formatted_results = self.enhanced_executor.format_results(tool_results)
+                
+                if self.ctx.debug_mode:
+                    console.print(f"\n[bold blue]-- Tool Results Fed Back to Model --[/]\n" + "\n".join(formatted_results))
+                    console.print("[bold blue]---------------------[/]")
+                    
+                self.message_history.append({"role": "assistant", "content": model_response_text})
+                self.message_history.append({"role": "user", "content": f"Tool Results: \n" + "\n".join(formatted_results)})
+                continue
 
             # If no valid tool call is found, this is the final answer
             self.ctx.response = model_response_text
@@ -560,8 +577,8 @@ class LocalCodingHandler(CommandHandler):
             self.ctx.response = "[red]Error:[/] Exceeded maximum tool calls (5)."
 
         # Maintain a reasonable history size
-        if len(self.message_history) > 10:
-            self.message_history = [self.message_history[0]] + self.message_history[-8:]
+        if len(self.message_history) > config.HISTORY_TRIM_SIZE:
+            self.message_history = [self.message_history[0]] + self.message_history[-config.HISTORY_KEEP_SIZE:]
 
     def _generate_response(self) -> str:
         try:
@@ -569,29 +586,6 @@ class LocalCodingHandler(CommandHandler):
             return output['choices'][0]['message']['content']
         except Exception as e:
             return f"[red]Model Generation Error:[/] {str(e)}"
-
-    def _execute_tool(self, tool_call: Dict[str, Any]) -> str:
-        tool_name = tool_call.get("tool")
-        path = tool_call.get("path")
-        content = tool_call.get("content")
-
-        if not path and tool_name != "run_bash":
-            return "[red]Error:[/] Path is required for file operations."
-
-        if tool_name == "read_file":
-            response = self.ctx.mcp_client.read_file(path)
-            return response.get("content", f"[red]Error:[/] {response.get('error', 'Could not read file.')}")
-        elif tool_name == "write_file":
-            response = self.ctx.mcp_client.write_file(path, content or "")
-            return response.get("status", f"[red]Error:[/] {response.get('error', 'Could not write to file.')}")
-        elif tool_name == "list_dir":
-            response = self.ctx.mcp_client.list_dir(path)
-            if "result" in response:
-                return json.dumps(response["result"])
-            else:
-                return f"[red]Error:[/] {response.get('error', 'Failed to list directory.')}"
-        else:
-            return f"[red]Error:[/] Unknown tool: {tool_name}"
 
     def clear_history(self):
         """Resets the conversation history and deletes the session file."""

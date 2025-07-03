@@ -2,6 +2,7 @@
 import sys
 import os
 import requests
+from config import config
 
 class MCPClient:
     def __init__(self, endpoint, api_key):
@@ -16,9 +17,12 @@ class MCPClient:
             response = requests.get(
                 f"{self.endpoint}/read?file={path}",
                 headers=self.headers,
-                timeout=10
+                timeout=config.MCP_CLIENT_TIMEOUT
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"error": response.json().get("error", f"HTTP {response.status_code}")}
         except Exception as e:
             return {"error": f"MCP request failed: {str(e)}"}
     
@@ -29,9 +33,12 @@ class MCPClient:
                 f"{self.endpoint}/write",
                 headers=self.headers,
                 json=payload,
-                timeout=10
+                timeout=config.MCP_CLIENT_TIMEOUT
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"error": response.json().get("error", f"HTTP {response.status_code}")}
         except Exception as e:
             return {"error": f"MCP request failed: {str(e)}"}
     
@@ -42,9 +49,12 @@ class MCPClient:
                 f"{self.endpoint}/list",
                 headers=self.headers,
                 json=payload,
-                timeout=10
+                timeout=config.MCP_CLIENT_TIMEOUT
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"error": response.json().get("error", f"HTTP {response.status_code}")}
         except Exception as e:
             return {"error": f"MCP request failed: {str(e)}"}
     
@@ -55,8 +65,11 @@ class MCPClient:
                 f"{self.endpoint}/delete",
                 headers=self.headers,
                 json=payload,
-                timeout=10
+                timeout=config.MCP_CLIENT_TIMEOUT
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"error": response.json().get("error", f"HTTP {response.status_code}")}
         except Exception as e:
             return {"error": f"MCP request failed: {str(e)}"}
