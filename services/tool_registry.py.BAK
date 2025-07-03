@@ -1,0 +1,414 @@
+"""
+Tool Registry Pattern Implementation for DeepCoderX
+
+This module implements a centralized tool registry that manages all available tools
+across both local and cloud AI handlers, eliminating duplication and providing
+a single source of truth for tool definitions.
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional, Callable, Union
+from enum import Enum
+import json
+import inspect
+
+
+class ToolCategory(Enum):
+    """Categories of tools available in the system."""
+    FILE_OPERATIONS = "file_operations"
+    DIRECTORY_OPERATIONS = "directory_operations"
+    SYSTEM_OPERATIONS = "system_operations"
+    ANALYSIS_TOOLS = "analysis_tools"
+    UTILITY_TOOLS = "utility_tools"
+
+
+class ToolPermission(Enum):
+    """Permission levels for tool usage."""
+    READ_ONLY = "read_only"
+    WRITE_ALLOWED = "write_allowed"
+    SYSTEM_ACCESS = "system_access"
+    UNRESTRICTED = "unrestricted"
+
+
+@dataclass
+class ToolParameter:
+    """Definition of a tool parameter."""
+    name: str
+    type: str
+    description: str
+    required: bool = True
+    default: Any = None
+    enum_values: Optional[List[str]] = None
+    
+    def to_openai_schema(self) -> Dict[str, Any]:
+        """Convert to OpenAI function parameter schema."""
+        schema = {
+            "type": self.type,
+            "description": self.description
+        }
+        
+        if self.enum_values:
+            schema["enum"] = self.enum_values
+            
+        if self.default is not None:
+            schema["default"] = self.default
+            
+        return schema
+
+
+@dataclass
+class ToolDefinition:
+    """Complete definition of a tool."""
+    name: str
+    description: str
+    category: ToolCategory
+    permission: ToolPermission
+    parameters: List[ToolParameter] = field(default_factory=list)
+    examples: List[str] = field(default_factory=list)
+    executor_function: Optional[Callable] = None
+    
+    def get_required_parameters(self) -> List[str]:
+        """Get list of required parameter names."""
+        return [param.name for param in self.parameters if param.required]
+    
+    def get_optional_parameters(self) -> List[str]:
+        """Get list of optional parameter names."""
+        return [param.name for param in self.parameters if not param.required]
+    
+    def to_openai_format(self) -> Dict[str, Any]:
+        """Convert to OpenAI function calling format."""
+        properties = {}
+        required = []
+        
+        for param in self.parameters:
+            properties[param.name] = param.to_openai_schema()
+            if param.required:
+                required.append(param.name)
+        
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required
+                }
+            }
+        }
+    
+    def validate_call(self, tool_call: Dict[str, Any]) -> List[str]:
+        """Validate a tool call against this definition."""
+        errors = []
+        
+        # Check required parameters
+        for param_name in self.get_required_parameters():
+            if param_name not in tool_call:
+                errors.append(f"Missing required parameter: {param_name}")
+        
+        # Check parameter types (basic validation)
+        for param_name, value in tool_call.items():
+            if param_name == "tool":  # Skip tool name
+                continue
+                
+            param_def = next((p for p in self.parameters if p.name == param_name), None)
+            if param_def:
+                # Type validation could be enhanced here
+                if param_def.type == "string" and not isinstance(value, str):
+                    errors.append(f"Parameter {param_name} must be a string")
+                elif param_def.type == "integer" and not isinstance(value, int):
+                    errors.append(f"Parameter {param_name} must be an integer")
+        
+        return errors
+
+
+class ToolRegistry:
+    """Centralized registry for all available tools."""
+    
+    def __init__(self):
+        self.tools: Dict[str, ToolDefinition] = {}
+        self._register_core_tools()
+    
+    def register_tool(self, tool_definition: ToolDefinition) -> None:
+        """Register a new tool in the registry."""
+        self.tools[tool_definition.name] = tool_definition
+    
+    def unregister_tool(self, tool_name: str) -> bool:
+        """Remove a tool from the registry."""
+        if tool_name in self.tools:
+            del self.tools[tool_name]
+            return True
+        return False
+    
+    def get_tool(self, tool_name: str) -> Optional[ToolDefinition]:
+        """Get a specific tool definition."""
+        return self.tools.get(tool_name)
+    
+    def list_tools(self, category: Optional[ToolCategory] = None, 
+                   permission: Optional[ToolPermission] = None) -> List[ToolDefinition]:
+        """List tools filtered by category and/or permission."""
+        filtered_tools = []
+        
+        for tool in self.tools.values():
+            # Category filter
+            if category and tool.category != category:
+                continue
+            
+            # Permission filter
+            if permission and tool.permission != permission:
+                continue
+            
+            filtered_tools.append(tool)
+        
+        return filtered_tools
+    
+    def get_tool_names(self, category: Optional[ToolCategory] = None) -> List[str]:
+        """Get list of tool names, optionally filtered by category."""
+        tools = self.list_tools(category=category)
+        return [tool.name for tool in tools]
+    
+    def get_openai_definitions(self, max_permissions: Optional[ToolPermission] = None) -> List[Dict[str, Any]]:
+        """Get OpenAI function definitions for tools within permission level."""
+        definitions = []
+        
+        # Define permission hierarchy (lower values = less permissive)
+        permission_levels = {
+            ToolPermission.READ_ONLY: 1,
+            ToolPermission.WRITE_ALLOWED: 2,
+            ToolPermission.SYSTEM_ACCESS: 3,
+            ToolPermission.UNRESTRICTED: 4
+        }
+        
+        max_level = permission_levels.get(max_permissions, 4)
+        
+        for tool in self.tools.values():
+            tool_level = permission_levels.get(tool.permission, 1)
+            if tool_level <= max_level:
+                definitions.append(tool.to_openai_format())
+        
+        return definitions
+    
+    def validate_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate a tool call against registered definitions."""
+        tool_name = tool_call.get("tool")
+        if not tool_name:
+            return {
+                "valid": False,
+                "errors": ["Missing 'tool' parameter"],
+                "suggestions": ["Tool call must include 'tool' parameter with the tool name"]
+            }
+        
+        tool_def = self.get_tool(tool_name)
+        if not tool_def:
+            available_tools = list(self.tools.keys())
+            return {
+                "valid": False,
+                "errors": [f"Unknown tool: {tool_name}"],
+                "suggestions": [f"Available tools: {', '.join(available_tools)}"]
+            }
+        
+        # Validate parameters
+        errors = tool_def.validate_call(tool_call)
+        
+        result = {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "tool_definition": tool_def
+        }
+        
+        if errors:
+            result["suggestions"] = self._get_usage_suggestions(tool_def)
+        
+        return result
+    
+    def _get_usage_suggestions(self, tool_def: ToolDefinition) -> List[str]:
+        """Get usage suggestions for a tool."""
+        suggestions = []
+        
+        if tool_def.examples:
+            suggestions.append(f"Example usage: {tool_def.examples[0]}")
+        
+        required_params = tool_def.get_required_parameters()
+        if required_params:
+            suggestions.append(f"Required parameters: {', '.join(required_params)}")
+        
+        optional_params = tool_def.get_optional_parameters()
+        if optional_params:
+            suggestions.append(f"Optional parameters: {', '.join(optional_params)}")
+        
+        return suggestions
+    
+    def _register_core_tools(self) -> None:
+        """Register the core tools that DeepCoderX provides."""
+        
+        # File Operations
+        self.register_tool(ToolDefinition(
+            name="read_file",
+            description="Read the complete content of a file",
+            category=ToolCategory.FILE_OPERATIONS,
+            permission=ToolPermission.READ_ONLY,
+            parameters=[
+                ToolParameter("path", "string", "Relative path to the file to read")
+            ],
+            examples=[
+                '{"tool": "read_file", "path": "config.py"}',
+                '{"tool": "read_file", "path": "src/main.py"}'
+            ]
+        ))
+        
+        self.register_tool(ToolDefinition(
+            name="write_file",
+            description="Write content to a file, creating it if it doesn't exist",
+            category=ToolCategory.FILE_OPERATIONS,
+            permission=ToolPermission.WRITE_ALLOWED,
+            parameters=[
+                ToolParameter("path", "string", "Relative path to the file to write"),
+                ToolParameter("content", "string", "Content to write to the file")
+            ],
+            examples=[
+                '{"tool": "write_file", "path": "script.py", "content": "print(\\"hello\\")"}',
+                '{"tool": "write_file", "path": "data.txt", "content": "sample data"}'
+            ]
+        ))
+        
+        # Directory Operations
+        self.register_tool(ToolDefinition(
+            name="list_dir",
+            description="List the contents of a directory",
+            category=ToolCategory.DIRECTORY_OPERATIONS,
+            permission=ToolPermission.READ_ONLY,
+            parameters=[
+                ToolParameter("path", "string", "Relative path to the directory to list", default=".")
+            ],
+            examples=[
+                '{"tool": "list_dir", "path": "."}',
+                '{"tool": "list_dir", "path": "src"}'
+            ]
+        ))
+        
+        # System Operations
+        self.register_tool(ToolDefinition(
+            name="run_bash",
+            description="Execute a shell command in the project directory",
+            category=ToolCategory.SYSTEM_OPERATIONS,
+            permission=ToolPermission.SYSTEM_ACCESS,
+            parameters=[
+                ToolParameter("command", "string", "Shell command to execute")
+            ],
+            examples=[
+                '{"tool": "run_bash", "command": "ls -la"}',
+                '{"tool": "run_bash", "command": "python test.py"}'
+            ]
+        ))
+        
+        # Note: delete_path is intentionally not registered as it's disabled for security
+
+    def export_tool_documentation(self) -> str:
+        """Export documentation for all registered tools."""
+        docs = ["# DeepCoderX Tool Registry Documentation\n"]
+        
+        for category in ToolCategory:
+            category_tools = self.list_tools(category=category)
+            if not category_tools:
+                continue
+                
+            docs.append(f"## {category.value.replace('_', ' ').title()}\n")
+            
+            for tool in category_tools:
+                docs.append(f"### {tool.name}")
+                docs.append(f"**Description:** {tool.description}")
+                docs.append(f"**Permission:** {tool.permission.value}")
+                
+                if tool.parameters:
+                    docs.append("**Parameters:**")
+                    for param in tool.parameters:
+                        required_text = " (required)" if param.required else " (optional)"
+                        docs.append(f"- `{param.name}` ({param.type}){required_text}: {param.description}")
+                
+                if tool.examples:
+                    docs.append("**Examples:**")
+                    for example in tool.examples:
+                        docs.append(f"```json\n{example}\n```")
+                
+                docs.append("")  # Empty line
+        
+        return "\n".join(docs)
+
+
+# Global registry instance
+tool_registry = ToolRegistry()
+
+
+# Convenience functions for common operations
+def get_tools_for_provider(provider_name: str, provider_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Get appropriate tools for a specific provider."""
+    # Determine permission level based on provider type
+    if provider_name == "local":
+        # Local models get more permissive access
+        max_permission = ToolPermission.SYSTEM_ACCESS
+    else:
+        # Cloud models get more restricted access
+        max_permission = ToolPermission.WRITE_ALLOWED
+    
+    # Get tools based on provider capabilities
+    if provider_config.get("supports_tools", False):
+        return tool_registry.get_openai_definitions(max_permissions=max_permission)
+    else:
+        return []
+
+
+def validate_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate a tool call using the global registry."""
+    return tool_registry.validate_tool_call(tool_call)
+
+
+def get_tool_definition(tool_name: str) -> Optional[ToolDefinition]:
+    """Get a tool definition from the global registry."""
+    return tool_registry.get_tool(tool_name)
+
+
+def list_available_tools(category: Optional[str] = None) -> List[str]:
+    """List available tool names, optionally filtered by category."""
+    category_enum = None
+    if category:
+        try:
+            category_enum = ToolCategory(category)
+        except ValueError:
+            pass
+    
+    return tool_registry.get_tool_names(category=category_enum)
+
+
+# Example of how to register custom tools
+def register_custom_tool(name: str, description: str, category: str, 
+                        permission: str, parameters: List[Dict[str, Any]]) -> bool:
+    """Register a custom tool (example for extensibility)."""
+    try:
+        category_enum = ToolCategory(category)
+        permission_enum = ToolPermission(permission)
+        
+        param_objects = []
+        for param in parameters:
+            param_objects.append(ToolParameter(
+                name=param["name"],
+                type=param["type"], 
+                description=param["description"],
+                required=param.get("required", True),
+                default=param.get("default")
+            ))
+        
+        tool_def = ToolDefinition(
+            name=name,
+            description=description,
+            category=category_enum,
+            permission=permission_enum,
+            parameters=param_objects
+        )
+        
+        tool_registry.register_tool(tool_def)
+        return True
+        
+    except (ValueError, KeyError) as e:
+        return False

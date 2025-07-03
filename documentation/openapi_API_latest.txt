@@ -1,0 +1,265 @@
+openapi: 3.1.0
+info:
+  title: MCP Local File System API
+  version: 1.0.0
+  description: Local File System tools for a Model Context Protocol (MCP) server
+
+servers:
+  - url: http://localhost:6666
+    description: Local MCP FS Server
+
+paths:
+  /fs/read:
+    post:
+      summary: Read a file from the local file system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReadRequest'
+      responses:
+        '200':
+          description: File content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadResponse'
+
+  /fs/write:
+    post:
+      summary: Write content to a file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WriteRequest'
+      responses:
+        '200':
+          description: Write confirmation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+
+  /fs/list:
+    post:
+      summary: List files in a directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListRequest'
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListResponse'
+
+  /fs/delete:
+    post:
+      summary: Delete a file or folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+      responses:
+        '200':
+          description: Delete confirmation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+
+  /fs/move:
+    post:
+      summary: Move or rename a file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveRequest'
+      responses:
+        '200':
+          description: Move confirmation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoveResponse'
+
+  /fs/mkdir:
+    post:
+      summary: Create a directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MkdirRequest'
+      responses:
+        '200':
+          description: Mkdir confirmation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MkdirResponse'
+
+  /fs/stat:
+    post:
+      summary: Get metadata/statistics of a file or directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatRequest'
+      responses:
+        '200':
+          description: Stat result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatResponse'
+
+components:
+  schemas:
+    ReadRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: Path to the file to read
+
+    ReadResponse:
+      type: object
+      properties:
+        content:
+          type: string
+          description: File content as plain text
+
+    WriteRequest:
+      type: object
+      required: [path, content]
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+        overwrite:
+          type: boolean
+          default: true
+
+    WriteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        message:
+          type: string
+
+    ListRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+        recursive:
+          type: boolean
+          default: false
+
+    ListResponse:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              path:
+                type: string
+              type:
+                type: string
+                enum: [file, directory]
+
+    DeleteRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+        recursive:
+          type: boolean
+          default: false
+
+    DeleteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+
+    MoveRequest:
+      type: object
+      required: [from_path, to_path]
+      properties:
+        from_path:
+          type: string
+        to_path:
+          type: string
+
+    MoveResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+
+    MkdirRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+        recursive:
+          type: boolean
+          default: true
+
+    MkdirResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+
+    StatRequest:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+
+    StatResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [file, directory, missing]
+        size:
+          type: integer
+        modified:
+          type: string
+          format: date-time

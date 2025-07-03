@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""
+Validation script for immediate architectural fixes in DeepCoderX.
+
+This script tests:
+1. Fix #1: Unified tool definitions (local models now get tool definitions)
+2. Fix #2: Standardized error handling
+"""
+
+import sys
+import json
+from pathlib import Path
+
+# Add the project root to the path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+def test_fix_1_tool_definitions():
+    """Test that local models now receive tool definitions."""
+    print("🔧 Testing Fix #1: Unified Tool Definitions")
+    
+    try:
+        from config import config
+        from services.unified_openai_handler import UnifiedOpenAIHandler
+        
+        # Check local provider configuration
+        local_config = config.PROVIDERS.get("local", {})
+        supports_tools = local_config.get("supports_tools", False)
+        
+        print(f"   Local provider supports_tools: {supports_tools}")
+        
+        if supports_tools:
+            print("   ✅ Local provider configured to support tools")
+        else:
+            print("   ❌ Local provider not configured for tools")
+            return False
+        
+        # Test that unified handler can create tool definitions
+        handler_class = UnifiedOpenAIHandler
+        method = getattr(handler_class, '_get_tool_definitions', None)
+        
+        if method:
+            print("   ✅ Tool definitions method exists")
+        else:
+            print("   ❌ Tool definitions method missing")
+            return False
+        
+        # Check if the exclusion was removed from the code
+        import inspect
+        source = inspect.getsource(handler_class._create_chat_completion)
+        
+        if 'self.provider_name != "local"' in source:
+            print("   ❌ Local model exclusion still present in code")
+            return False
+        else:
+            print("   ✅ Local model exclusion removed from code")
+        
+        print("   🎉 Fix #1 validation PASSED\n")
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Fix #1 validation FAILED: {e}\n")
+        return False
+
+def test_fix_2_error_handling():
+    """Test the new standardized error handling system."""
+    print("🔧 Testing Fix #2: Standardized Error Handling")
+    
+    try:
+        from services.error_handler import ErrorHandler, ErrorType, StandardError
+        from services.error_handler import tool_error, file_error, validation_error
+        
+        # Test 1: Error creation
+        error = ErrorHandler.create_tool_error("test_tool", "test message", "test suggestion")
+        if error.type == ErrorType.TOOL_EXECUTION_ERROR:
+            print("   ✅ StandardError creation works")
+        else:
+            print("   ❌ StandardError creation failed")
+            return False
+        
+        # Test 2: Error formatting
+        formatted = ErrorHandler.format_error(error)
+        if "[red]" in formatted and "test message" in formatted:
+            print("   ✅ Error formatting works")
+        else:
+            print("   ❌ Error formatting failed")
+            return False
+        
+        # Test 3: Convenience functions
+        tool_err = tool_error("test", "message", "suggestion")
+        file_err = file_error("read", "test.txt", "not found")
+        val_err = validation_error("path", None, "string")
+        
+        if all(isinstance(err, str) for err in [tool_err, file_err, val_err]):
+            print("   ✅ Convenience functions work")
+        else:
+            print("   ❌ Convenience functions failed")
+            return False
+        
+        # Test 4: Check tool_executor import
+        from services.tool_executor import ToolExecutor
+        import inspect
+        source = inspect.getsource(ToolExecutor)
+        
+        if "from services.error_handler import" in source:
+            print("   ✅ ToolExecutor uses new error handling")
+        else:
+            print("   ❌ ToolExecutor not updated with new error handling")
+            return False
+        
+        print("   🎉 Fix #2 validation PASSED\n")
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Fix #2 validation FAILED: {e}\n")
+        return False
+
+def test_architectural_consistency():
+    """Test that the architectural improvements are consistent."""
+    print("🔧 Testing Architectural Consistency")
+    
+    try:
+        from config import config
+        
+        # Test 1: All providers with supports_tools=True should work consistently
+        tool_enabled_providers = [
+            name for name, provider_config in config.PROVIDERS.items() 
+            if provider_config.get("supports_tools", False) and provider_config.get("enabled", False)
+        ]
+        
+        print(f"   Tool-enabled providers: {tool_enabled_providers}")
+        
+        if "local" in tool_enabled_providers:
+            print("   ✅ Local provider included in tool-enabled providers")
+        else:
+            print("   ❌ Local provider not in tool-enabled providers")
+            return False
+        
+        # Test 2: Check that provider configurations are consistent
+        for provider_name in tool_enabled_providers:
+            provider_config = config.PROVIDERS[provider_name]
+            required_keys = ["name", "enabled", "supports_tools", "model"]
+            
+            missing_keys = [key for key in required_keys if key not in provider_config]
+            if missing_keys:
+                print(f"   ❌ Provider {provider_name} missing keys: {missing_keys}")
+                return False
+        
+        print("   ✅ Provider configurations are consistent")
+        print("   🎉 Architectural consistency PASSED\n")
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Architectural consistency FAILED: {e}\n")
+        return False
+
+def main():
+    """Run all validation tests."""
+    print("🚀 DeepCoderX Immediate Fixes Validation")
+    print("=" * 50)
+    
+    results = []
+    
+    # Run tests
+    results.append(test_fix_1_tool_definitions())
+    results.append(test_fix_2_error_handling())
+    results.append(test_architectural_consistency())
+    
+    # Summary
+    passed = sum(results)
+    total = len(results)
+    
+    print("📊 VALIDATION SUMMARY")
+    print("=" * 20)
+    print(f"Tests passed: {passed}/{total}")
+    
+    if passed == total:
+        print("🎉 ALL FIXES VALIDATED SUCCESSFULLY!")
+        print("\n✅ Key Improvements:")
+        print("   - Local models now receive native OpenAI tool definitions")
+        print("   - Standardized error handling across all components")
+        print("   - Consistent tool calling architecture for all providers")
+        print("   - Reduced architectural fragmentation")
+        
+        print("\n🚀 Next Steps:")
+        print("   - Test with actual local model (LM Studio)")
+        print("   - Verify cloud model tool calling still works")
+        print("   - Begin migration of other components to use new error handling")
+        print("   - Implement tool registry pattern for further consolidation")
+        
+        return 0
+    else:
+        print("❌ SOME FIXES NEED ATTENTION")
+        print(f"   Failed tests: {total - passed}")
+        print("   Review the output above for specific issues")
+        return 1
+
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)

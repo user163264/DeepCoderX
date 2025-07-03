@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""
+Live DeepSeek Tool Calling Test
+Tests actual API calls with native OpenAI tool usage
+"""
+
+import sys
+import os
+import time
+import signal
+from pathlib import Path
+
+# Add project root to path
+sys.path.append('/Users/admin/Documents/DeepCoderX')
+
+def setup_live_test():
+    """Set up live test environment"""
+    try:
+        from models.session import CommandContext
+        from services.mcpclient import MCPClient
+        from services.unified_openai_handler import CloudOpenAIHandler
+        from config import config
+        
+        # Check API key
+        api_key = config.PROVIDERS["deepseek"]["api_key"]
+        if not api_key or api_key == "your_api_key_here":
+            print("❌ No valid DeepSeek API key found")
+            print("💡 Set DEEPSEEK_API_KEY environment variable")
+            return None, None
+        
+        # Create context
+        test_dir = Path('/Users/admin/Documents/DeepCoderX')
+        
+        # Initialize MCP client with required parameters
+        mcp_client = MCPClient(
+            endpoint=f"http://{config.MCP_SERVER_HOST}:{config.MCP_SERVER_PORT}",
+            api_key=config.MCP_API_KEY
+        )
+        
+        ctx = CommandContext(
+            root_path=test_dir,
+            mcp_client=mcp_client,
+            sandbox_path=config.SANDBOX_PATH,
+            debug_mode=True
+        )
+        
+        # Create handler
+        handler = CloudOpenAIHandler(ctx, "deepseek")
+        
+        return ctx, handler
+        
+    except Exception as e:
+        print(f"❌ Setup error: {e}")
+        return None, None

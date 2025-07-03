@@ -1,0 +1,323 @@
+import sys
+import os
+import argparse
+import threading
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load the .env file from the project root
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+# Import gnureadline for arrow key support on macOS
+# This MUST be one of the first imports to work correctly.
+if sys.platform == 'darwin':
+    import gnureadline
+
+from rich.console import Console
+from rich.panel import Panel
+import time
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.markdown import Markdown
+from rich.text import Text
+from utils.silly_messages import get_silly_message
+
+from config import config
+from models.session import CommandContext
+from models.router import CommandProcessor, CommandHandler
+from services.llm_handler import (
+    SecurityMiddleware, 
+    FilesystemCommandHandler,
+    AutoImplementHandler,
+    LocalCodingHandler  # Legacy - deprecated in favor of LocalOpenAIHandler
+)
+# Import new OpenAI-compatible handlers (preferred)
+try:
+    from services.unified_openai_handler import LocalOpenAIHandler, CloudOpenAIHandler
+    OPENAI_HANDLERS_AVAILABLE = True
+    OPENAI_IMPORT_ERROR = None
+except ImportError as e:
+    OPENAI_HANDLERS_AVAILABLE = False
+    OPENAI_IMPORT_ERROR = str(e)
+from services.mcpserver import start_mcp_server
+from services.mcpclient import MCPClient
+
+console = Console()
+
+def start_background_mcp():
+    """Start MCP server in background thread"""
+    threading.Thread(
+        target=start_mcp_server,
+        daemon=True,
+        kwargs={
+            "host": config.MCP_SERVER_HOST,
+            "port": config.MCP_SERVER_PORT,
+            "sandbox_path": config.SANDBOX_PATH
+        }
+    ).start()
+
+def create_env_template_if_needed():
+    """Create a .env file from a template if one doesn't exist."""
+    env_path = Path('.env')
+    if not env_path.exists():
+        template = (
+            "# DeepCoderX Configuration\n"
+            "# --------------------------\n\n"
+            "# Your DeepSeek API key (required for @deepseek commands)\n"
+            "DEEPSEEK_API_KEY=\n\n"
+            "# The full path to your local model file (e.g., /path/to/your/model.gguf)\n"
+            f"LOCAL_MODEL_PATH={config.LOCAL_MODEL_PATH}\n"
+        )
+        with open(env_path, 'w') as f:
+            f.write(template)
+        console.print("[bold yellow]Created a new .env file. Please edit it to add your DeepSeek API key.[/]")
+
+def main():
+    create_env_template_if_needed()
+    parser = argparse.ArgumentParser(description="DeepCoderX - AI Coding Assistant")
+    parser.add_argument("--dir", default=os.getcwd(), help="Project directory")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--dry-run", action="store_true", help="Enable dry-run mode")
+    parser.add_argument("--auto-confirm", action="store_true", help="Auto-confirm file modifications")
+    parser.add_argument("--use-legacy", action="store_true", help="Force use of legacy handlers (for debugging)")
+    args = parser.parse_args()
+    
+    try:
+        project_dir = Path(args.dir).resolve()
+        os.chdir(project_dir)
+    except Exception as e:
+        console.print(f"[red]Error:[/] {str(e)}")
+        project_dir = Path.cwd()
+    
+    # Start MCP server
+    start_background_mcp()
+    
+    # Create MCP client
+    mcp_client = MCPClient(
+        endpoint=f"http://{config.MCP_SERVER_HOST}:{config.MCP_SERVER_PORT}",
+        api_key=config.MCP_API_KEY
+    )
+    
+    ctx = CommandContext(
+        root_path=project_dir,
+        mcp_client=mcp_client,
+        sandbox_path=config.SANDBOX_PATH
+    )
+    ctx.debug_mode = args.debug or config.DEBUG_MODE
+    ctx.dry_run = args.dry_run
+    ctx.auto_confirm = args.auto_confirm
+    
+    processor = CommandProcessor(ctx)
+    processor.add_middleware(SecurityMiddleware(ctx))
+    processor.add_handler(FilesystemCommandHandler(ctx))
+    
+    # MIGRATION PHASE 1: Prioritize Unified Handlers
+    if OPENAI_HANDLERS_AVAILABLE and not args.use_legacy:
+        try:
+            # Primary: Use unified OpenAI-compatible handlers
+            processor.add_handler(CloudOpenAIHandler(ctx, "deepseek"))
+            processor.add_handler(LocalOpenAIHandler(ctx))
+            processor.add_handler(AutoImplementHandler(ctx))
+            
+            # Show migration status
+            if ctx.debug_mode:
+                console.print("[bold green]✓ Using Unified Architecture Handlers[/]")
+                console.print(f"[green]✓ Available providers: {', '.join(config.PROVIDERS.keys())}[/]")
+                console.print("[dim]Note: Legacy handlers available with --use-legacy flag[/]")
+                
+        except Exception as e:
+            console.print(f"[yellow]Warning:[/] Unified handlers failed, falling back to legacy: {e}")
+            # Fallback to legacy handlers
+            processor.add_handler(AutoImplementHandler(ctx))
+            processor.add_handler(LocalCodingHandler(ctx))
+            console.print("[yellow]Using legacy handlers as fallback[/]")
+            
+    elif args.use_legacy:
+        # Force legacy handlers (for testing/debugging)
+        processor.add_handler(AutoImplementHandler(ctx))
+        processor.add_handler(LocalCodingHandler(ctx))
+        console.print("[yellow]Using legacy handlers (forced by --use-legacy flag)[/]")
+        
+    else:
+        # OpenAI handlers not available
+        if not OPENAI_HANDLERS_AVAILABLE:
+            console.print(f"[yellow]Warning:[/] OpenAI handlers not available: {OPENAI_IMPORT_ERROR}")
+            console.print("[yellow]Install OpenAI library: pip install openai>=1.0.0[/]")
+            console.print("[yellow]Using legacy handlers as fallback[/]")
+        
+        # Use legacy handlers only
+        processor.add_handler(AutoImplementHandler(ctx))
+        processor.add_handler(LocalCodingHandler(ctx))
+
+    # Add a fallback handler for unknown commands
+    class NotFoundHandler(CommandHandler):
+        def can_handle(self) -> bool:
+            return True
+        def handle(self) -> None:
+            self.ctx.response = f"[red]Error:[/] Command not found: {self.ctx.user_input}"
+    
+    processor.add_handler(NotFoundHandler(ctx))
+    
+    # Application setup
+    console.print(Panel.fit("🚀 [bold cyan]DeepCoderX[/] - AI Coding Assistant", style="bold blue"))
+    console.print(f"[dim]Working directory: {project_dir}[/]")
+    
+    # Show provider status
+    if OPENAI_HANDLERS_AVAILABLE and not args.use_legacy:
+        enabled_providers = [name for name, provider in config.PROVIDERS.items() if provider.get("enabled", False)]
+        console.print(f"[green]Providers:[/] {', '.join(enabled_providers)}")
+        console.print("[green]Architecture:[/] Unified (OpenAI-compatible)")
+    else:
+        console.print("[yellow]Architecture:[/] Legacy handlers")
+    
+    console.print()
+
+    # Migration notification
+    if OPENAI_HANDLERS_AVAILABLE and not args.use_legacy:
+        console.print("[bold green]🎉 Running with Unified Architecture![/]")
+        console.print("[dim]• Tool Registry Pattern active")
+        console.print("[dim]• Standardized error handling") 
+        console.print("[dim]• Consistent tool calling across all models[/]")
+    else:
+        console.print("[bold yellow]⚠️  Running with Legacy Handlers[/]")
+        console.print("[dim]Consider upgrading: pip install openai>=1.0.0[/]")
+    
+    console.print()
+    console.print("Type 'help' for commands, 'clear' to clear history, or 'exit' to quit.")
+    console.print()
+
+    while True:
+        try:
+            user_input = input(f"{project_dir.name}> ").strip()
+            
+            if not user_input:
+                continue
+            elif user_input.lower() == 'exit':
+                break
+            elif user_input.lower() == 'help':
+                show_help()
+                continue
+            elif user_input.lower() == 'clear':
+                handle_clear_command(processor, ctx)
+                continue
+            elif user_input.lower() == 'status':
+                show_status(ctx)
+                continue
+            elif user_input.lower() == 'providers':
+                show_providers()
+                continue
+
+            ctx.user_input = user_input
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                task = progress.add_task("Processing...", total=None)
+                
+                try:
+                    processor.process()
+                except KeyboardInterrupt:
+                    progress.update(task, description="[red]Cancelled by user[/]")
+                    console.print("\n[yellow]Operation cancelled.[/]")
+                    continue
+                finally:
+                    progress.stop()
+            
+            if ctx.response:
+                console.print(f"\n{ctx.response}\n")
+            
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Goodbye![/]")
+            break
+        except EOFError:
+            console.print("\n[yellow]Goodbye![/]")
+            break
+        except Exception as e:
+            console.print(f"[red]Unexpected error:[/] {e}")
+            if ctx.debug_mode:
+                import traceback
+                console.print(f"[red]Traceback:[/] {traceback.format_exc()}")
+
+def show_help():
+    """Show help information."""
+    help_text = """
+[bold cyan]DeepCoderX Commands:[/]
+
+[bold]Basic Commands:[/]
+• help - Show this help message
+• clear - Clear conversation history  
+• exit - Exit the application
+• status - Show current status and configuration
+• providers - Show available AI providers
+
+[bold]Model Commands:[/]
+• @deepseek [message] - Use DeepSeek for analysis
+• @qwen [message] - Use local model (default)
+
+[bold]File Operations:[/]
+• @filename.py - Include file content in your message
+• Use natural language for file operations
+
+[bold]Special Commands:[/]
+• --build-context - Build project context for analysis
+• --use-legacy - Force legacy handlers (debugging)
+
+[bold]Examples:[/]
+• "Read config.py and explain it"
+• "@deepseek analyze the architecture"
+• "Create a test script for the API"
+• "list files in the current directory"
+"""
+    console.print(Panel(help_text, title="Help", style="blue"))
+
+def handle_clear_command(processor, ctx):
+    """Handle the clear command for all handlers."""
+    for handler in processor.handlers:
+        if hasattr(handler, 'clear_history'):
+            handler.clear_history()
+    console.print("[green]✓ Conversation history cleared for all models[/]")
+
+def show_status(ctx):
+    """Show current application status."""
+    status_info = f"""
+[bold]System Status:[/]
+• Debug Mode: {'[green]Enabled[/]' if ctx.debug_mode else '[dim]Disabled[/]'}
+• Dry Run: {'[yellow]Enabled[/]' if ctx.dry_run else '[dim]Disabled[/]'}
+• Auto Confirm: {'[yellow]Enabled[/]' if ctx.auto_confirm else '[dim]Disabled[/]'}
+• Architecture: {'[green]Unified[/]' if OPENAI_HANDLERS_AVAILABLE else '[yellow]Legacy[/]'}
+
+[bold]Working Directory:[/]
+• Path: {ctx.root_path}
+• Sandbox: {ctx.sandbox_path}
+
+[bold]MCP Server:[/]
+• Host: {config.MCP_SERVER_HOST}
+• Port: {config.MCP_SERVER_PORT}
+"""
+    console.print(Panel(status_info, title="Status", style="blue"))
+
+def show_providers():
+    """Show available AI providers."""
+    if not OPENAI_HANDLERS_AVAILABLE:
+        console.print("[yellow]OpenAI handlers not available. Install with: pip install openai>=1.0.0[/]")
+        console.print("[yellow]Currently using legacy handlers only.[/]")
+        return
+    
+    provider_info = ["[bold]Available AI Providers:[/]\n"]
+    
+    for name, provider in config.PROVIDERS.items():
+        status = "[green]✓[/]" if provider.get("enabled", False) else "[red]✗[/]"
+        tools = "[green]Yes[/]" if provider.get("supports_tools", False) else "[dim]No[/]"
+        
+        provider_info.append(f"{status} [bold]{provider.get('name', name)}[/]")
+        provider_info.append(f"   Model: {provider.get('model', 'N/A')}")
+        provider_info.append(f"   Tools: {tools}")
+        provider_info.append(f"   Base URL: {provider.get('base_url', 'Default')}")
+        provider_info.append("")
+    
+    console.print(Panel("\n".join(provider_info), title="Providers", style="blue"))
+
+if __name__ == "__main__":
+    main()

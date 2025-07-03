@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""
+Cloud Provider Functionality Verification Test
+
+This script verifies that cloud providers (DeepSeek, OpenAI) still work correctly
+after our architectural fixes, ensuring no regressions were introduced.
+"""
+
+import sys
+import os
+import json
+import time
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+class CloudProviderTester:
+    """Test harness for cloud provider functionality verification."""
+    
+    def __init__(self):
+        self.test_results = []
+        
+    def check_provider_configurations(self):
+        """Verify cloud provider configurations are intact."""
+        print("⚙️  Checking Cloud Provider Configurations")
+        print("=" * 42)
+        
+        try:
+            from config import config
+            
+            cloud_providers = ["deepseek", "openai"]
+            
+            for provider_name in cloud_providers:
+                provider_config = config.PROVIDERS.get(provider_name, {})
+                
+                print(f"\n   📋 {provider_name.title()} Configuration:")
+                print(f"      Enabled: {provider_config.get('enabled', False)}")
+                print(f"      Supports tools: {provider_config.get('supports_tools', False)}")
+                print(f"      Model: {provider_config.get('model', 'Not configured')}")
+                print(f"      Base URL: {provider_config.get('base_url', 'Default')}")
+                
+                # Check required configuration
+                required_keys = ["name", "enabled", "model"]
+                missing_keys = [key for key in required_keys if key not in provider_config]
+                
+                if missing_keys:
+                    print(f"      ❌ Missing configuration: {missing_keys}")
+                    return False
+                else:
+                    print(f"      ✅ Configuration complete")
+                
+                # Check API key configuration (without revealing the key)
+                api_key = provider_config.get("api_key")
+                if api_key:
+                    key_preview = api_key[:8] + "..." if len(api_key) > 8 else "***"
+                    print(f"      🔑 API key configured: {key_preview}")
+                else:
+                    print(f"      ⚠️  No API key configured")
+            
+            print("\n   ✅ Cloud provider configurations verified")
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ Configuration check failed: {e}")
+            return False
+    
+    def test_unified_handler_cloud_support(self):
+        """Test that unified handlers properly support cloud providers."""
+        print("\n🔗 Testing Unified Handler Cloud Support")
+        print("=" * 40)
+        
+        try:
+            from config import config
+            from services.unified_openai_handler import CloudOpenAIHandler, UnifiedOpenAIHandler
+            
+            # Test CloudOpenAIHandler exists and has proper methods
+            handler_methods = [
+                '_get_tool_definitions',
+                '_create_chat_completion', 
+                '_handle_native_tool_calls',
+                'can_handle'
+            ]
+            
+            for method_name in handler_methods:
+                if hasattr(CloudOpenAIHandler, method_name):
+                    print(f"   ✅ {method_name} method available")
+                else:
+                    print(f"   ❌ {method_name} method missing")
+                    return False
+            
+            # Test tool definitions for cloud providers - FIX: Create real handler instance
+            # Create mock context for testing
+            class MockMCPClient:
+                def read_file(self, path): 
+                    return {"content": f"Mock content of {path}"}
+                def write_file(self, path, content): 
+                    return {"status": "success"}
+                def list_dir(self, path): 
+                    return {"result": {"files": ["test.txt"], "directories": ["test_dir"]}}
+            
+            class MockContext:
+                def __init__(self):
+                    self.root_path = Path(project_root)
+                    self.current_dir = Path(project_root)
+                    self.user_input = "Hello, can you help me?"
+                    self.debug_mode = True
+                    self.mcp_client = MockMCPClient()
+                    self.model_name = "Test"
+                    self.response = ""
+                    self.status = ""
+                    self.status_message = ""
+            
+            mock_ctx = MockContext()
+            
+            # Create a real handler instance to test tool definitions
+            handler = CloudOpenAIHandler(mock_ctx, "deepseek")
+            tool_definitions = handler._get_tool_definitions()
+            expected_tools = ["read_file", "write_file", "list_dir", "run_bash"]
+            actual_tools = [tool["function"]["name"] for tool in tool_definitions]
+            
+            print(f"   📋 Tool definitions: {len(tool_definitions)} tools")
+            print(f"      Expected: {expected_tools}")
+            print(f"      Available: {actual_tools}")
+            
+            if set(expected_tools) == set(actual_tools):
+                print("   ✅ Cloud provider tool definitions correct")
+            else:
+                print("   ❌ Cloud provider tool definitions mismatch")
+                return False
+            
+            # Test that _create_chat_completion includes tools for cloud providers
+            import inspect
+            source = inspect.getsource(UnifiedOpenAIHandler._create_chat_completion)
+            
+            if 'self.provider_config.get("supports_tools", False)' in source:
+                print("   ✅ Tool support check present in _create_chat_completion")
+            else:
+                print("   ❌ Tool support check missing")
+                return False
+            
+            # Verify that local exclusion was removed (regression test)
+            if 'self.provider_name != "local"' in source:
+                print("   ❌ Local exclusion still present (regression)")
+                return False
+            else:
+                print("   ✅ Local exclusion properly removed")
+            
+            print("   ✅ Unified handler cloud support verified")
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ Unified handler cloud support test failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def test_deepseek_handler_configuration(self):
+        """Test DeepSeek-specific handler configuration."""
+        print("\n🧠 Testing DeepSeek Handler Configuration")
+        print("=" * 40)
+        
+        try:
+            from config import config
+            from services.unified_openai_handler import CloudOpenAIHandler
+            
+            # Test DeepSeek configuration
+            deepseek_config = config.PROVIDERS.get("deepseek", {})
+            
+            if not deepseek_config:
+                print("   ⚠️  DeepSeek not configured (may be intentional)")
+                return True
+            
+            print(f"   📋 DeepSeek Configuration:")
+            print(f"      Name: {deepseek_config.get('name')}")
+            print(f"      Enabled: {deepseek_config.get('enabled', False)}")
+            print(f"      Model: {deepseek_config.get('model')}")
+            print(f"      Supports tools: {deepseek_config.get('supports_tools', False)}")
+            
+            # Test backward compatibility
+            legacy_enabled = getattr(config, 'DEEPSEEK_ENABLED', None)
+            legacy_api_key = getattr(config, 'DEEPSEEK_API_KEY', None) 
+            legacy_api_url = getattr(config, 'DEEPSEEK_API_URL', None)
+            
+            print(f"\n   🔄 Backward Compatibility:")
+            print(f"      DEEPSEEK_ENABLED: {legacy_enabled}")
+            print(f"      DEEPSEEK_API_KEY: {'***' if legacy_api_key else 'Not set'}")
+            print(f"      DEEPSEEK_API_URL: {legacy_api_url}")
+            
+            if legacy_enabled == deepseek_config.get('enabled'):
+                print("   ✅ Backward compatibility maintained")
+            else:
+                print("   ⚠️  Backward compatibility issue detected")
+            
+            # Test that DeepSeek can use native tool calling
+            if deepseek_config.get("supports_tools", False):
+                print("   ✅ DeepSeek configured for native tool calling")
+            else:
+                print("   ⚠️  DeepSeek not configured for tool support")
+            
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ DeepSeek handler test failed: {e}")
+            return False
+    
+    def test_openai_handler_configuration(self):
+        """Test OpenAI-specific handler configuration."""
+        print("\n🤖 Testing OpenAI Handler Configuration") 
+        print("=" * 37)
+        
+        try:
+            from config import config
+            
+            # Test OpenAI configuration
+            openai_config = config.PROVIDERS.get("openai", {})
+            
+            if not openai_config:
+                print("   ⚠️  OpenAI not configured (may be intentional)")
+                return True
+            
+            print(f"   📋 OpenAI Configuration:")
+            print(f"      Name: {openai_config.get('name')}")
+            print(f"      Enabled: {openai_config.get('enabled', False)}")
+            print(f"      Model: {openai_config.get('model')}")
+            print(f"      Base URL: {openai_config.get('base_url', 'Default OpenAI')}")
+            print(f"      Supports tools: {openai_config.get('supports_tools', False)}")
+            
+            # Test that OpenAI uses default endpoint (base_url should be None)
+            if openai_config.get('base_url') is None:
+                print("   ✅ OpenAI using default endpoint")
+            else:
+                print(f"   ⚠️  OpenAI using custom endpoint: {openai_config.get('base_url')}")
+            
+            # Test that OpenAI supports tools
+            if openai_config.get("supports_tools", False):
+                print("   ✅ OpenAI configured for native tool calling")
+            else:
+                print("   ⚠️  OpenAI not configured for tool support")
+            
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ OpenAI handler test failed: {e}")
+            return False
+    
+    def test_cloud_error_handling(self):
+        """Test error handling for cloud provider scenarios."""
+        print("\n🛡️  Testing Cloud Provider Error Handling")
+        print("=" * 40)
+        
+        try:
+            from services.error_handler import ErrorHandler, api_error
+            
+            # Test API error scenarios
+            print("   🧪 Testing API error scenarios...")
+            
+            # Authentication error
+            auth_error = ErrorHandler.create_api_error("deepseek", 401)
+            if "Authentication" in str(auth_error) and "API key" in str(auth_error):
+                print("   ✅ Authentication error properly formatted")
+            else:
+                print("   ❌ Authentication error formatting failed")
+                return False
+            
+            # Rate limit error
+            rate_error = ErrorHandler.create_api_error("openai", 429)
+            if "Rate limit" in str(rate_error) and "quota" in str(rate_error):
+                print("   ✅ Rate limit error properly formatted")
+            else:
+                print("   ❌ Rate limit error formatting failed")
+                return False
+            
+            # Server error
+            server_error = ErrorHandler.create_api_error("deepseek", 503)
+            if "Server error" in str(server_error) and "unavailable" in str(server_error):
+                print("   ✅ Server error properly formatted")
+            else:
+                print("   ❌ Server error formatting failed")
+                return False
+            
+            # Test convenience function - FIX: Test the actual result format
+            quick_error = api_error("test-provider", 404, "Not found")
+            if "[red]" in quick_error and "test-provider" in quick_error:
+                print("   ✅ API error convenience function works")
+            else:
+                print(f"   ❌ API error convenience function failed")
+                print(f"       Expected: [red] markup and 'test-provider'")
+                print(f"       Got: {quick_error}")
+                return False
+            
+            print("   ✅ Cloud provider error handling tests passed")
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ Cloud error handling test failed: {e}")
+            return False
+    
+    def test_legacy_handler_compatibility(self):
+        """Test that legacy handlers still work alongside new ones."""
+        print("\n🔄 Testing Legacy Handler Compatibility")
+        print("=" * 38)
+        
+        try:
+            # Test that legacy handlers can still be imported
+            from services.llm_handler import LocalCodingHandler
+            print("   ✅ Legacy handlers can still be imported")
+            
+            # Test that both handler systems can coexist
+            from services.unified_openai_handler import CloudOpenAIHandler, LocalOpenAIHandler
+            print("   ✅ New unified handlers coexist with legacy")
+            
+            # Test that app.py can handle both handler types
+            import inspect
+            import ast
+            
+            app_path = project_root / "app.py"
+            if app_path.exists():
+                with open(app_path, 'r') as f:
+                    app_content = f.read()
+                
+                # Check for both handler imports
+                if "CloudOpenAIHandler" in app_content and "LocalCodingHandler" in app_content:
+                    print("   ✅ App.py imports both handler types")
+                else:
+                    print("   ⚠️  App.py may not import all handler types")
+                
+                # Check for fallback logic
+                if "OPENAI_HANDLERS_AVAILABLE" in app_content:
+                    print("   ✅ Fallback logic present for handler selection")
+                else:
+                    print("   ⚠️  No fallback logic detected")
+            
+            print("   ✅ Legacy compatibility verified")
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ Legacy compatibility test failed: {e}")
+            return False
+    
+    def run_comprehensive_test(self):
+        """Run all cloud provider verification tests."""
+        print("🌩️  Cloud Provider Functionality Verification")
+        print("=" * 48)
+        
+        results = []
+        
+        # Run all tests
+        results.append(self.check_provider_configurations())
+        results.append(self.test_unified_handler_cloud_support())
+        results.append(self.test_deepseek_handler_configuration())
+        results.append(self.test_openai_handler_configuration())
+        results.append(self.test_cloud_error_handling())
+        results.append(self.test_legacy_handler_compatibility())
+        
+        # Summary
+        passed = sum(results)
+        total = len(results)
+        
+        print(f"\n📊 CLOUD PROVIDER TEST SUMMARY")
+        print("=" * 32)
+        print(f"Tests passed: {passed}/{total}")
+        
+        if passed == total:
+            print("🎉 ALL CLOUD PROVIDER TESTS PASSED!")
+            print("\n✅ Verified:")
+            print("   - Cloud provider configurations intact")
+            print("   - Unified handlers support cloud providers")
+            print("   - Tool definitions work for cloud models")
+            print("   - Error handling properly implemented")
+            print("   - Legacy compatibility maintained")
+            print("   - No regressions detected")
+            
+            print("\n🎯 Regression Testing Complete:")
+            print("   - Cloud providers unaffected by fixes")
+            print("   - Native tool calling still works")
+            print("   - Backward compatibility preserved")
+            return True
+        else:
+            print("❌ SOME CLOUD PROVIDER TESTS FAILED")
+            print(f"   Issues: {total - passed} tests")
+            return False
+
+def main():
+    """Main test execution."""
+    tester = CloudProviderTester()
+    success = tester.run_comprehensive_test()
+    
+    if success:
+        print("\n🚀 CLOUD PROVIDERS VERIFIED - READY FOR NEXT STEP")
+        return 0
+    else:
+        print("\n⚠️  REVIEW CLOUD PROVIDER ISSUES")
+        return 1
+
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)

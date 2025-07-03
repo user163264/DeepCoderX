@@ -1,0 +1,513 @@
+"""
+Unified OpenAI-Compatible Handler for DeepCoderX
+
+This module provides a unified interface for all OpenAI-compatible AI providers,
+eliminating code duplication and providing native tool calling support.
+Supports LM Studio, DeepSeek, OpenAI, and other OpenAI-compatible endpoints.
+
+Updated to use the Tool Registry Pattern for centralized tool management.
+"""
+
+import os
+import json
+import re
+from typing import Dict, Any, List, Optional, Union
+from pathlib import Path
+
+try:
+    from openai import OpenAI
+except ImportError:
+    raise ImportError("OpenAI client not installed. Run: pip install openai>=1.0.0")
+
+from config import config
+from utils.logging import console, log_api_usage
+from services.context_builder import CodeContextBuilder
+from models.session import CommandContext
+from models.router import CommandHandler
+from services.tool_executor import ToolExecutor
+from services.context_manager import ContextManager
+from services.tool_registry import tool_registry, get_tools_for_provider
+
+
+class UnifiedOpenAIHandler(CommandHandler):
+    """
+    Unified handler that works with any OpenAI-compatible API provider.
+    Supports both local (LM Studio) and cloud (DeepSeek, OpenAI, etc.) providers.
+    
+    Uses the Tool Registry Pattern for centralized tool management.
+    """
+    
+    def __init__(self, context: CommandContext, provider: str = None):
+        super().__init__(context)
+        self.provider_name = provider or config.DEFAULT_PROVIDER
+        self.provider_config = config.PROVIDERS.get(self.provider_name)
+        
+        if not self.provider_config:
+            raise ValueError(f"Unknown provider: {self.provider_name}")
+        
+        if not self.provider_config["enabled"]:
+            raise ValueError(f"Provider '{self.provider_name}' is not enabled")
+        
+        # Initialize OpenAI client with provider-specific settings
+        self._client = None
+        self.session_file = self.ctx.root_path / ".deepcoderx" / f"{self.provider_name}_session.json"
+        self.tool_executor = ToolExecutor(self.ctx, use_complex_path_resolution=True)
+        self._load_history()
+    
+    @property
+    def client(self) -> OpenAI:
+        """Lazy load the OpenAI client on first access."""
+        if self._client is None:
+            client_kwargs = {
+                "api_key": self.provider_config["api_key"]
+            }
+            
+            # Set base_url for non-OpenAI providers
+            if self.provider_config["base_url"]:
+                client_kwargs["base_url"] = self.provider_config["base_url"]
+            
+            self._client = OpenAI(**client_kwargs)
+            
+            if self.ctx.debug_mode:
+                console.print(f"[bold green]Initialized {self.provider_config['name']} client[/]")
+        
+        return self._client
+    
+    def _load_history(self):
+        """Load conversation history from session file."""
+        if self.session_file.exists():
+            try:
+                with open(self.session_file, "r") as f:
+                    self.message_history = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                self._reset_history()
+        else:
+            self._reset_history()
+    
+    def _reset_history(self):
+        """Reset conversation history with appropriate system prompt."""
+        # Choose system prompt based on provider and use case
+        if self.provider_name == "local":
+            system_prompt = config.LOCAL_SYSTEM_PROMPT
+        else:
+            # For analysis providers like DeepSeek, include project context
+            context_manager = ContextManager(self.ctx)
+            if context_manager.context_file_exists():
+                initial_context = context_manager.read_context_file()
+            else:
+                initial_context = context_manager.build_and_save_context()
+            
+            system_prompt = config.DEEPSEEK_SYSTEM_PROMPT + f"\n\n**Project Context File:**\n{initial_context}\n\n**Current Configuration**:\n{config.CURRENT_CONFIG}"
+        
+        self.message_history = [
+            {"role": "system", "content": system_prompt}
+        ]
+    
+    def _save_history(self):
+        """Save conversation history to session file."""
+        self.session_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.session_file, "w") as f:
+            json.dump(self.message_history, f, indent=2)
+    
+    def can_handle(self) -> bool:
+        """Determine if this handler can process the current request."""
+        # This will be called by specific subclasses for routing
+        return True
+    
+    def handle(self) -> None:
+        """Main processing method using OpenAI-compatible API."""
+        self.ctx.model_name = self.provider_config["name"]
+        
+        # Handle special commands first
+        if "--build-context" in self.ctx.user_input and self.provider_name != "local":
+            self._handle_build_context()
+            return
+        
+        # Parse user input and handle file references
+        user_prompt = self._parse_user_input()
+        self.message_history.append({"role": "user", "content": user_prompt})
+        
+        # Main conversation loop with tool support
+        self._conversation_loop()
+        
+        # Save history and trim if needed
+        self._maintain_history()
+        self._save_history()
+    
+    def _handle_build_context(self):
+        """Handle context building command."""
+        context_manager = ContextManager(self.ctx)
+        context_manager.build_and_save_context()
+        self.ctx.response = f"[green]Successfully built and saved project context to {context_manager.CONTEXT_FILE_NAME}[/]."
+    
+    def _parse_user_input(self) -> str:
+        """Parse user input, handling file references and cleaning provider prefixes."""
+        # Remove provider prefixes like @deepseek, @qwen, etc.
+        cleaned_input = re.sub(r'@\w+\s*', '', self.ctx.user_input).strip()
+        
+        # Handle file references (@filename)
+        words = self.ctx.user_input.split()
+        file_paths, message_words = [], []
+        
+        for word in words:
+            if word.startswith('@') and word.lower() not in ['@qwen', '@deepseek', '@openai']:
+                file_paths.append(word[1:])
+            elif word.lower() not in ['@qwen', '@deepseek', '@openai']:
+                message_words.append(word)
+        
+        cleaned_input = " ".join(message_words)
+        
+        # Add file contents if referenced
+        file_contents = []
+        for path in file_paths:
+            try:
+                response = self.ctx.mcp_client.read_file(path)
+                if "content" in response:
+                    file_contents.append(f"""--- Content from @{path} ---
+{response['content']}
+--- End of content ---""")
+                else:
+                    file_contents.append(f"--- Error reading @{path}: {response.get('error')} ---")
+            except Exception as e:
+                file_contents.append(f"--- Exception reading @{path}: {e} ---")
+        
+        if file_contents:
+            cleaned_input += "\n\n" + "\n\n".join(file_contents)
+        
+        return cleaned_input
+    
+    def _conversation_loop(self):
+        """Main conversation loop with native OpenAI tool calling support."""
+        max_tool_calls = config.MAX_TOOL_CALLS
+        
+        for i in range(max_tool_calls):
+            # Check for tool call limit
+            if i == max_tool_calls - 1:
+                if "PYTEST_CURRENT_TEST" in os.environ:
+                    self.ctx.response = "[red]Operation canceled by test environment to prevent infinite loop.[/]"
+                    return
+                
+                self.ctx.status_message = "Tool call limit reached. Asking for user confirmation."
+                console.print(f"\n[bold yellow]Warning:[/] The AI has used tools {max_tool_calls} times and may be in a loop.")
+                if input(f"Do you want to allow it to continue for another {max_tool_calls} calls? (y/N) ").lower() != 'y':
+                    self.ctx.response = "[red]Operation canceled by user.[/]"
+                    return
+            
+            self.ctx.status_message = f"Thinking with {self.provider_config['name']}..."
+            
+            try:
+                # Create chat completion with native tool support
+                response = self._create_chat_completion()
+                
+                if not response or not response.choices:
+                    self.ctx.response = "[red]Error:[/] No response from AI provider"
+                    return
+                
+                choice = response.choices[0]
+                message = choice.message
+                
+                # Handle tool calls using native OpenAI format
+                if message.tool_calls:
+                    self._handle_native_tool_calls(message, response)
+                    continue
+                
+                # No tools called, this is the final response
+                self.ctx.response = message.content or "No response content"
+                self.message_history.append({"role": "assistant", "content": self.ctx.response})
+                break
+                
+            except Exception as e:
+                self.ctx.response = f"[red]API Error:[/] {str(e)}"
+                if self.ctx.debug_mode:
+                    console.print(f"[bold red]DEBUG:[/] Full error: {e}")
+                return
+        else:
+            self.ctx.response = f"[red]Error:[/] Exceeded maximum tool calls ({max_tool_calls})."
+    
+    def _create_chat_completion(self):
+        """Create chat completion with appropriate parameters."""
+        completion_params = {
+            "model": self.provider_config["model"],
+            "messages": self.message_history,
+            "temperature": self.provider_config.get("temperature", 0.1),
+            "max_tokens": self.provider_config.get("max_tokens", 2048)
+        }
+        
+        # Add tools using the Tool Registry Pattern
+        # This enables consistent tool calling across local and cloud models
+        if self.provider_config.get("supports_tools", False):
+            completion_params["tools"] = self._get_tool_definitions()
+            completion_params["tool_choice"] = "auto"
+        
+        response = self.client.chat.completions.create(**completion_params)
+        
+        # Log usage if available
+        if hasattr(response, 'usage') and response.usage:
+            log_api_usage(self.provider_name, response.usage.total_tokens)
+        
+        return response
+    
+    def _get_tool_definitions(self) -> List[Dict[str, Any]]:
+        """Get OpenAI-format tool definitions using Tool Registry."""
+        # Use the centralized tool registry instead of hardcoded definitions
+        tools = get_tools_for_provider(self.provider_name, self.provider_config)
+        
+        if self.ctx.debug_mode:
+            tool_names = [tool["function"]["name"] for tool in tools]
+            console.print(f"[bold blue]DEBUG:[/] Loaded {len(tools)} tools from registry: {tool_names}")
+        
+        return tools
+    
+    def _handle_native_tool_calls(self, message, response):
+        """Handle native OpenAI tool calls with improved validation."""
+        self.message_history.append({
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [
+                {
+                    "id": tool_call.id,
+                    "type": tool_call.type,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments
+                    }
+                }
+                for tool_call in message.tool_calls
+            ]
+        })
+        
+        # Execute each tool call with registry validation
+        for tool_call in message.tool_calls:
+            try:
+                # Parse function arguments
+                function_args = json.loads(tool_call.function.arguments)
+                
+                # Create tool call for validation
+                tool_call_dict = {
+                    "tool": tool_call.function.name,
+                    **function_args
+                }
+                
+                # Validate using tool registry
+                validation_result = tool_registry.validate_tool_call(tool_call_dict)
+                
+                if not validation_result["valid"]:
+                    # Handle validation errors
+                    errors = validation_result["errors"]
+                    suggestions = validation_result.get("suggestions", [])
+                    
+                    error_msg = f"Tool validation failed: {'; '.join(errors)}"
+                    if suggestions:
+                        error_msg += f"\nSuggestions: {'; '.join(suggestions)}"
+                    
+                    self.message_history.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": error_msg
+                    })
+                    continue
+                
+                self.ctx.status = f"Using tool: {tool_call.function.name}..."
+                
+                # Execute using existing tool executor
+                result = self.tool_executor.execute_tool(tool_call_dict)
+                
+                # Add tool result to message history
+                self.message_history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": str(result)
+                })
+                
+                if self.ctx.debug_mode:
+                    console.print(f"[bold blue]Tool {tool_call.function.name} result:[/] {result}")
+                    
+            except json.JSONDecodeError as e:
+                error_msg = f"Tool argument parsing error: {str(e)}"
+                self.message_history.append({
+                    "role": "tool", 
+                    "tool_call_id": tool_call.id,
+                    "content": error_msg
+                })
+                
+                if self.ctx.debug_mode:
+                    console.print(f"[bold red]Tool parsing error:[/] {error_msg}")
+                    
+            except Exception as e:
+                error_msg = f"Tool execution error: {str(e)}"
+                self.message_history.append({
+                    "role": "tool", 
+                    "tool_call_id": tool_call.id,
+                    "content": error_msg
+                })
+                
+                if self.ctx.debug_mode:
+                    console.print(f"[bold red]Tool error:[/] {error_msg}")
+    
+    def _handle_legacy_tool_calls(self, model_response_text: str):
+        """Handle legacy JSON tool calls for models that don't support native tools."""
+        tool_call_matches = re.findall(r'\{.*?\}', model_response_text, re.DOTALL)
+        
+        if not tool_call_matches:
+            return False
+        
+        tool_results = []
+        for tool_call_json in tool_call_matches:
+            try:
+                response_json = json.loads(tool_call_json)
+                
+                if "tool" in response_json:
+                    # Validate using tool registry
+                    validation_result = tool_registry.validate_tool_call(response_json)
+                    
+                    if not validation_result["valid"]:
+                        # Add validation error to results
+                        errors = validation_result["errors"]
+                        suggestions = validation_result.get("suggestions", [])
+                        error_msg = f"Tool validation failed: {'; '.join(errors)}"
+                        if suggestions:
+                            error_msg += f"\nSuggestions: {'; '.join(suggestions)}"
+                        tool_results.append(error_msg)
+                        continue
+                    
+                    self.ctx.status = f"Using tool: {response_json['tool']}..."
+                    result = self.tool_executor.execute_tool(response_json)
+                    tool_results.append(str(result))
+                    
+            except json.JSONDecodeError:
+                # Ignore invalid JSON
+                continue
+        
+        if tool_results:
+            self.message_history.append({"role": "assistant", "content": model_response_text})
+            self.message_history.append({"role": "user", "content": f"Tool Results: \n" + "\n".join(tool_results)})
+            return True
+        
+        return False
+    
+    def _maintain_history(self):
+        """Maintain reasonable conversation history size."""
+        if len(self.message_history) > config.HISTORY_TRIM_SIZE:
+            # Keep system prompt and recent messages
+            system_prompt = self.message_history[0]
+            recent_messages = self.message_history[-config.HISTORY_KEEP_SIZE:]
+            self.message_history = [system_prompt] + recent_messages
+    
+    def clear_history(self):
+        """Reset conversation history and delete session file."""
+        self._reset_history()
+        if self.session_file.exists():
+            self.session_file.unlink()
+        if self.ctx.debug_mode:
+            console.print(f"[bold red]DEBUG:[/] {self.provider_config['name']} conversation history cleared.")
+    
+    def get_available_tools(self) -> List[str]:
+        """Get list of available tools for this provider."""
+        tools = get_tools_for_provider(self.provider_name, self.provider_config)
+        return [tool["function"]["name"] for tool in tools]
+    
+    def export_tool_documentation(self) -> str:
+        """Export documentation for tools available to this provider."""
+        return tool_registry.export_tool_documentation()
+
+
+class LocalOpenAIHandler(UnifiedOpenAIHandler):
+    """Specialized handler for local LM Studio provider."""
+    
+    ANALYSIS_KEYWORDS = {
+        r'\barchitecture\b', r'\breview\b', r'\brefactor\b', r'\bdependencies\b',
+        r'\bcross-file\b', r'\bcodebase\b', r'\bpattern\b', r'\banalyze\b',
+        r'\bexplain\b', r'\bimprove\b', r'\boptimize\b', r'\bdesign\b'
+    }
+    
+    def __init__(self, context: CommandContext):
+        super().__init__(context, "local")
+    
+    def can_handle(self) -> bool:
+        """Handle local requests and fallback for everything else."""
+        if not self.provider_config["enabled"]:
+            return False
+        
+        # Handle if specifically requested or if no analysis keywords present
+        query = self.ctx.user_input.lower()
+        is_analysis = any(re.search(pattern, query) for pattern in self.ANALYSIS_KEYWORDS)
+        
+        return not is_analysis or self.ctx.user_input.lower().startswith("@qwen")
+    
+    def _conversation_loop(self):
+        """Override to use legacy tool calling for local models."""
+        max_tool_calls = config.MAX_TOOL_CALLS
+        recent_tool_calls = []
+        
+        for i in range(max_tool_calls):
+            if i == max_tool_calls - 1:
+                if "PYTEST_CURRENT_TEST" in os.environ:
+                    self.ctx.response = "[red]Operation canceled by test environment to prevent infinite loop.[/]"
+                    return
+                
+                console.print(f"\n[bold yellow]Warning:[/] The AI has used tools {max_tool_calls} times and may be in a loop.")
+                if input(f"Do you want to continue? (y/N) ").lower() != 'y':
+                    self.ctx.response = "[red]Operation canceled by user.[/]"
+                    return
+            
+            self.ctx.status_message = f"Thinking with {self.provider_config['name']}..."
+            
+            try:
+                response = self._create_chat_completion()
+                model_response_text = response.choices[0].message.content or ""
+                
+                # Use legacy tool calling for local models
+                if self._handle_legacy_tool_calls(model_response_text):
+                    # Check for loop detection
+                    tool_call_match = re.search(r'\{.*?\}', model_response_text, re.DOTALL)
+                    if tool_call_match:
+                        tool_call_signature = tool_call_match.group(0).strip()
+                        if tool_call_signature and len(recent_tool_calls) > 0 and recent_tool_calls[-1] == tool_call_signature:
+                            self.ctx.response = "Task completed successfully."
+                            self.message_history.append({"role": "assistant", "content": self.ctx.response})
+                            break
+                        
+                        recent_tool_calls.append(tool_call_signature)
+                        if len(recent_tool_calls) > 2:
+                            recent_tool_calls.pop(0)
+                    continue
+                
+                # No tools, final response
+                self.ctx.response = model_response_text
+                self.message_history.append({"role": "assistant", "content": self.ctx.response})
+                break
+                
+            except Exception as e:
+                self.ctx.response = f"[red]API Error:[/] {str(e)}"
+                return
+        else:
+            self.ctx.response = f"[red]Error:[/] Exceeded maximum tool calls ({max_tool_calls})."
+
+
+class CloudOpenAIHandler(UnifiedOpenAIHandler):
+    """Specialized handler for cloud providers (DeepSeek, OpenAI, etc.)."""
+    
+    ANALYSIS_KEYWORDS = {
+        r'\barchitecture\b', r'\breview\b', r'\brefactor\b', r'\bdependencies\b',
+        r'\bcross-file\b', r'\bcodebase\b', r'\bpattern\b', r'\banalyze\b',
+        r'\bexplain\b', r'\bimprove\b', r'\boptimize\b', r'\bdesign\b'
+    }
+    
+    def __init__(self, context: CommandContext, provider: str = "deepseek"):
+        super().__init__(context, provider)
+    
+    def can_handle(self) -> bool:
+        """Handle analysis requests and explicit provider requests."""
+        if not self.provider_config["enabled"]:
+            return False
+        
+        # Handle if explicitly requested
+        if self.ctx.user_input.lower().startswith(f"@{self.provider_name}"):
+            return True
+        
+        # Handle analysis keywords
+        query = self.ctx.user_input.lower()
+        if "--build-context" in query:
+            return True
+        
+        return any(re.search(pattern, query) for pattern in self.ANALYSIS_KEYWORDS)

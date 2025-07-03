@@ -1,0 +1,30 @@
+{
+  "qwen": {
+    "description": "Chat template for Qwen models (e.g., Qwen2.5-Coder-1.5B-Instruct-GGUF).",
+    "template": "<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{user_prompt}<|im_end|>\n<|im_start|>assistant\n",
+    "roles": {
+      "system": "system",
+      "user": "user",
+      "assistant": "assistant"
+    },
+    "tokens": {
+      "start": "<|im_start|>",
+      "end": "<|im_end|>"
+    }
+  },
+  "llama-3.2-instruct": {
+    "description": "Chat template for Llama 3.2 Instruct models.",
+    "template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n",
+    "roles": {
+      "system": "system",
+      "user": "user",
+      "assistant": "assistant"
+    },
+    "tokens": {
+      "begin_of_text": "<|begin_of_text|>",
+      "start_header_id": "<|start_header_id|>",
+      "end_header_id": "<|end_header_id|>",
+      "end_of_turn": "<|eot_id|>"
+    }
+  }
+}

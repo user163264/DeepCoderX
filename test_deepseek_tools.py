@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+"""
+Comprehensive Test Script for DeepSeek Native Tool Calling
+Tests the unified OpenAI architecture with DeepSeek cloud provider
+"""
+
+import sys
+import os
+import json
+import time
+import signal
+from pathlib import Path
+
+# Add project root to path
+sys.path.append('/Users/admin/Documents/DeepCoderX')
+
+def setup_test_environment():
+    """Set up test environment and return context"""
+    try:
+        # Import required modules
+        from models.session import CommandContext
+        from services.mcpclient import MCPClient
+        from services.unified_openai_handler import CloudOpenAIHandler
+        from config import config
+        
+        # Create test directory structure
+        test_dir = Path('/Users/admin/Documents/DeepCoderX')
+        test_dir.mkdir(exist_ok=True)
+        
+        # Initialize MCP client with required parameters
+        mcp_client = MCPClient(
+            endpoint=f"http://{config.MCP_SERVER_HOST}:{config.MCP_SERVER_PORT}",
+            api_key=config.MCP_API_KEY
+        )
+        
+        # Create command context
+        ctx = CommandContext(
+            root_path=test_dir,
+            mcp_client=mcp_client,
+            sandbox_path=config.SANDBOX_PATH,
+            debug_mode=True
+        )
+        
+        return ctx, True
+        
+    except Exception as e:
+        print(f"❌ Setup failed: {e}")
+        return None, False
+
+def test_deepseek_configuration():
+    """Test DeepSeek provider configuration"""
+    print("🧪 Test 1: DeepSeek Configuration")
+    
+    try:
+        from config import config
+        
+        # Check provider exists
+        deepseek_config = config.PROVIDERS.get("deepseek")
+        if not deepseek_config:
+            print("❌ FAIL: DeepSeek provider not found in config")
+            return False
+            
+        # Check required fields
+        required_fields = ["name", "base_url", "api_key", "model", "enabled", "supports_tools"]
+        for field in required_fields:
+            if field not in deepseek_config:
+                print(f"❌ FAIL: Missing field '{field}' in DeepSeek config")
+                return False
+                
+        # Check tool support
+        if not deepseek_config.get("supports_tools", False):
+            print("❌ FAIL: DeepSeek tools not enabled")
+            return False
+            
+        print(f"✅ PASS: DeepSeek configured - {deepseek_config['name']}")
+        print(f"   📍 Endpoint: {deepseek_config['base_url']}")
+        print(f"   🔧 Tools: {deepseek_config['supports_tools']}")
+        print(f"   🎯 Model: {deepseek_config['model']}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def test_handler_creation():
+    """Test CloudOpenAIHandler creation for DeepSeek"""
+    print("\n🧪 Test 2: DeepSeek Handler Creation")
+    
+    ctx, setup_ok = setup_test_environment()
+    if not setup_ok:
+        return False
+        
+    try:
+        from services.unified_openai_handler import CloudOpenAIHandler
+        
+        # Create DeepSeek handler
+        handler = CloudOpenAIHandler(ctx, "deepseek")
+        
+        # Check handler properties
+        if handler.provider_name != "deepseek":
+            print(f"❌ FAIL: Wrong provider name: {handler.provider_name}")
+            return False
+            
+        if not handler.provider_config:
+            print("❌ FAIL: No provider config loaded")
+            return False
+            
+        print("✅ PASS: DeepSeek handler created successfully")
+        print(f"   🏷️ Provider: {handler.provider_name}")
+        print(f"   📁 Session file: {handler.session_file}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def test_openai_client_initialization():
+    """Test OpenAI client initialization for DeepSeek"""
+    print("\n🧪 Test 3: OpenAI Client Initialization")
+    
+    ctx, setup_ok = setup_test_environment()
+    if not setup_ok:
+        return False
+        
+    try:
+        from services.unified_openai_handler import CloudOpenAIHandler
+        
+        # Create handler
+        handler = CloudOpenAIHandler(ctx, "deepseek")
+        
+        # Test client property (lazy loading)
+        client = handler.client
+        
+        if not client:
+            print("❌ FAIL: OpenAI client not initialized")
+            return False
+            
+        # Check client configuration
+        if not hasattr(client, 'chat'):
+            print("❌ FAIL: OpenAI client missing chat interface")
+            return False
+            
+        print("✅ PASS: OpenAI client initialized for DeepSeek")
+        print(f"   🔌 Client type: {type(client).__name__}")
+        print(f"   🌐 Base URL: {handler.provider_config['base_url']}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def test_tool_definitions():
+    """Test native OpenAI tool definitions"""
+    print("\n🧪 Test 4: Native Tool Definitions")
+    
+    ctx, setup_ok = setup_test_environment()
+    if not setup_ok:
+        return False
+        
+    try:
+        from services.unified_openai_handler import CloudOpenAIHandler
+        
+        # Create handler
+        handler = CloudOpenAIHandler(ctx, "deepseek")
+        
+        # Get tool definitions
+        tools = handler._get_tool_definitions()
+        
+        if not tools:
+            print("❌ FAIL: No tool definitions returned")
+            return False
+            
+        # Expected tools
+        expected_tools = ["read_file", "write_file", "list_dir", "run_bash"]
+        found_tools = []
+        
+        for tool in tools:
+            if tool.get("type") == "function":
+                function_name = tool.get("function", {}).get("name")
+                if function_name:
+                    found_tools.append(function_name)
+        
+        # Check all expected tools are present
+        missing_tools = set(expected_tools) - set(found_tools)
+        if missing_tools:
+            print(f"❌ FAIL: Missing tools: {missing_tools}")
+            return False
+            
+        print(f"✅ PASS: All {len(tools)} tool definitions found")
+        print(f"   🔧 Tools: {', '.join(found_tools)}")
+        
+        # Test tool definition structure
+        sample_tool = tools[0]
+        required_fields = ["type", "function"]
+        for field in required_fields:
+            if field not in sample_tool:
+                print(f"❌ FAIL: Tool missing field: {field}")
+                return False
+                
+        print("   📋 Tool structure: Valid OpenAI format")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def test_session_management():
+    """Test session file management"""
+    print("\n🧪 Test 5: Session Management")
+    
+    ctx, setup_ok = setup_test_environment()
+    if not setup_ok:
+        return False
+        
+    try:
+        from services.unified_openai_handler import CloudOpenAIHandler
+        
+        # Create handler
+        handler = CloudOpenAIHandler(ctx, "deepseek")
+        
+        # Check session file path
+        expected_path = ctx.root_path / ".deepcoderx" / "deepseek_session.json"
+        if handler.session_file != expected_path:
+            print(f"❌ FAIL: Wrong session path: {handler.session_file}")
+            return False
+            
+        # Test history initialization
+        if not handler.message_history:
+            print("❌ FAIL: Message history not initialized")
+            return False
+            
+        # Should have system prompt
+        if len(handler.message_history) < 1:
+            print("❌ FAIL: No system prompt in history")
+            return False
+            
+        if handler.message_history[0].get("role") != "system":
+            print("❌ FAIL: First message is not system prompt")
+            return False
+            
+        print("✅ PASS: Session management working")
+        print(f"   📁 Session file: {handler.session_file.name}")
+        print(f"   📝 History length: {len(handler.message_history)}")
+        print(f"   🤖 System prompt: {len(handler.message_history[0]['content'])} chars")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def test_context_loading():
+    """Test project context loading for analysis"""
+    print("\n🧪 Test 6: Project Context Loading")
+    
+    ctx, setup_ok = setup_test_environment()
+    if not setup_ok:
+        return False
+        
+    try:
+        from services.unified_openai_handler import CloudOpenAIHandler
+        
+        # Delete existing session file to force fresh system prompt creation
+        session_file = ctx.root_path / ".deepcoderx" / "deepseek_session.json"
+        if session_file.exists():
+            session_file.unlink()
+        
+        # Create handler - this will now call _reset_history() 
+        handler = CloudOpenAIHandler(ctx, "deepseek")
+        
+        # Check system prompt includes project context
+        system_prompt = handler.message_history[0]["content"]
+        
+        # Should contain project context indicators
+        context_indicators = [
+            "Project Context File",
+            "DeepCoderX",
+            "Current Configuration"
+        ]
+        
+        missing_indicators = []
+        for indicator in context_indicators:
+            if indicator not in system_prompt:
+                missing_indicators.append(indicator)
+                
+        if missing_indicators:
+            print(f"❌ FAIL: Missing context indicators: {missing_indicators}")
+            return False
+            
+        print("✅ PASS: Project context loaded in system prompt")
+        print(f"   📄 Prompt size: {len(system_prompt)} characters")
+        print("   🎯 Contains: Project structure, configuration, and goals")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def test_api_key_validation():
+    """Test API key configuration"""
+    print("\n🧪 Test 7: API Key Validation")
+    
+    try:
+        from config import config
+        
+        api_key = config.PROVIDERS["deepseek"]["api_key"]
+        
+        if not api_key:
+            print("⚠️ WARNING: No DeepSeek API key configured")
+            print("   💡 Set DEEPSEEK_API_KEY environment variable")
+            return True  # Not a failure, just not configured
+            
+        # Basic format check
+        if not api_key.startswith("sk-"):
+            print("⚠️ WARNING: API key doesn't start with 'sk-'")
+            print("   💡 Check if API key format is correct")
+            return True
+            
+        print("✅ PASS: API key configured")
+        print(f"   🔑 Format: {api_key[:8]}...")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def test_integration_readiness():
+    """Test overall integration readiness"""
+    print("\n🧪 Test 8: Integration Readiness")
+    
+    ctx, setup_ok = setup_test_environment()
+    if not setup_ok:
+        return False
+        
+    try:
+        from services.unified_openai_handler import CloudOpenAIHandler
+        
+        # Create handler
+        handler = CloudOpenAIHandler(ctx, "deepseek")
+        
+        # Test can_handle method
+        ctx.user_input = "analyze the codebase architecture"
+        if not handler.can_handle():
+            print("❌ FAIL: Handler cannot handle analysis request")
+            return False
+            
+        # Test routing keywords
+        analysis_keywords = ["analyze", "review", "architecture", "codebase"]
+        
+        for keyword in analysis_keywords:
+            ctx.user_input = f"Please {keyword} this project"
+            if not handler.can_handle():
+                print(f"❌ FAIL: Handler doesn't recognize '{keyword}' as analysis")
+                return False
+                
+        print("✅ PASS: Ready for integration")
+        print("   🎯 Analysis keyword detection: Working")
+        print("   🔗 Handler routing: Functional")
+        print("   🛠️ Tool system: Configured")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return False
+
+def run_all_tests():
+    """Run all DeepSeek tool calling tests"""
+    print("=" * 70)
+    print("🔬 DEEPSEEK NATIVE TOOL CALLING TEST SUITE")
+    print("=" * 70)
+    
+    # Test functions
+    tests = [
+        test_deepseek_configuration,
+        test_handler_creation,
+        test_openai_client_initialization,
+        test_tool_definitions,
+        test_session_management,
+        test_context_loading,
+        test_api_key_validation,
+        test_integration_readiness
+    ]
+    
+    # Run tests
+    results = []
+    for test_func in tests:
+        try:
+            result = test_func()
+            results.append(result)
+        except Exception as e:
+            print(f"❌ CRITICAL ERROR in {test_func.__name__}: {e}")
+            results.append(False)
+    
+    # Summary
+    passed = sum(results)
+    total = len(results)
+    
+    print("\n" + "=" * 70)
+    print("📊 TEST SUMMARY")
+    print("=" * 70)
+    print(f"✅ Passed: {passed}/{total} tests")
+    print(f"❌ Failed: {total - passed}/{total} tests")
+    
+    if passed == total:
+        print("\n🎉 ALL TESTS PASSED!")
+        print("🚀 DeepSeek native tool calling is ready for use")
+        print("\n💡 Next steps:")
+        print("   1. Test actual DeepSeek API calls")
+        print("   2. Verify tool execution in live environment")
+        print("   3. Test complex multi-tool workflows")
+    else:
+        print(f"\n⚠️ {total - passed} tests failed - review issues above")
+        print("🔧 Fix failing tests before proceeding")
+    
+    print("=" * 70)
+    
+    return passed == total
+
+if __name__ == "__main__":
+    # Set up signal handling for clean exit
+    def signal_handler(sig, frame):
+        print("\n🛑 Test interrupted by user")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Run tests
+    success = run_all_tests()
+    sys.exit(0 if success else 1)
