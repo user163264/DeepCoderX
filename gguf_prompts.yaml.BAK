@@ -1,0 +1,71 @@
+# Simplified GGUF Prompting Configuration
+# Reduced from 264 lines to essential prompting strategies only
+
+# System instructions for stubborn GGUF models
+system_instructions:
+  emergency_override:
+    enabled: true
+    prefix: "🚨🚨🚨 EMERGENCY OVERRIDE - FOLLOW THESE INSTRUCTIONS EXACTLY 🚨🚨🚨"
+    mode_declaration: "YOU ARE IN TOOL-ONLY MODE. YOU MUST NOT GENERATE ANY TEXT RESPONSES."
+    format_requirement: "YOU MUST ONLY RESPOND WITH TOOL CALLS IN THIS EXACT FORMAT:"
+    format_example: "<tool_call>function_name({\"parameter\": \"value\"})</tool_call>"
+  
+  banned_responses:
+    enabled: true
+    title: "🚫🚫🚫 BANNED RESPONSES 🚫🚫🚫"
+    responses:
+      - "NEVER write: {\"response\": \"anything\"}"
+      - "NEVER write: \"The current directory is...\""
+      - "NEVER write: ANY TEXT AT ALL"
+  
+  allowed_responses:
+    enabled: true
+    title: "✅✅✅ ONLY ALLOWED RESPONSE ✅✅✅"
+    example: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+
+# Essential few-shot examples
+few_shot_examples:
+  enabled: true
+  title: "🔥🔥🔥 MANDATORY EXAMPLES - COPY EXACTLY 🔥🔥🔥"
+  examples:
+    - user: "pwd"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    - user: "ls"
+      assistant: "<tool_call>run_bash({\"command\": \"ls\"})</tool_call>"
+    - user: "Create a file called hello.txt with content 'Hello World'"
+      assistant: "<tool_call>write_file({\"path\": \"hello.txt\", \"content\": \"Hello World\"})</tool_call>"
+    - user: "List the files in the current directory"
+      assistant: "<tool_call>list_dir({\"path\": \".\"})</tool_call>"
+    - user: "Read the config.py file"
+      assistant: "<tool_call>read_file({\"path\": \"config.py\"})</tool_call>"
+
+# Model-specific settings
+model_overrides:
+  "qwen2.5-coder":
+    temperature: 0.0
+    extra_emphasis: true
+    repeat_examples: 2
+  "default":
+    temperature: 0.0
+    extra_emphasis: true
+    repeat_examples: 1
+
+# Post-processing fallback for stubborn models
+post_processing:
+  enabled: true
+  intent_patterns:
+    directory_queries:
+      patterns: ["pwd", "current directory", "what directory", "where am i"]
+      tool_call: "run_bash"
+      parameters:
+        command: "pwd"
+    file_listing:
+      patterns: ["ls", "list files", "show files", "directory contents"]
+      tool_call: "list_dir"
+      parameters:
+        path: "."
+
+# Debugging
+debugging:
+  enabled: false
+  log_prompt_construction: false

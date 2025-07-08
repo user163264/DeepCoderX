@@ -1,0 +1,29 @@
+# BACKUP - Original enhanced_gguf_config.py before complexity reduction
+# Date: 2025-07-08
+
+"""
+Enhanced GGUF Configuration for DeepCoderX
+
+This module provides configuration options for the enhanced GGUF handler
+that uses llama-cpp-python directly.
+"""
+
+import os
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+
+class EnhancedGGUFConfig:
+    """Configuration for enhanced GGUF model handling."""
+    
+    # Model paths and selection
+    DEFAULT_MODEL_NAME = "qwen2.5-coder-1.5b-instruct"
+    
+    MODEL_PATHS = {
+        # Qwen models
+        "qwen2.5-coder-1.5b-instruct": {
+            "q8_0": "qwen2.5-coder-1.5b-instruct-q8_0.gguf",
+            "q6_k": "qwen2.5-coder-1.5b-instruct-q6_k.gguf", 
+            "q5_k_m": "qwen2.5-coder-1.5b-instruct-q5_k_m.gguf",
+            "q4_k_m": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+        },

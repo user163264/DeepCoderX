@@ -1,0 +1,231 @@
+here's a **highly detailed technical report** outlining **best practices for integrating a GGUF-based `Qwen2.5-Coder-1.5B-Instruct` model** into a coder agent framework. This includes setup, architecture, prompt formatting, tool calling, inference, and token management.
+
+---
+
+# 🧾 Technical Report: GGUF-Based Integration of Qwen2.5-Coder-1.5B-Instruct
+
+### Model Type: `GGUF`
+
+### Model: `Qwen2.5-Coder-1.5B-Instruct`
+
+### Engine: [`llama-cpp-python`](https://github.com/abetlen/llama-cpp-python)
+
+---
+
+## ✅ 1. Installation and Environment Setup
+
+### A. Install `llama-cpp-python` with backend support:
+
+
+**For Mac M1/M2 (Metal):**
+
+```bash
+CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir
+```
+
+> ⚠️ `llama-cpp-python` must match your backend to use quantized models efficiently and support GPU acceleration.
+
+---
+
+## ⚙️ 2. Model Initialization Parameters (Best Practice)
+
+```python
+from llama_cpp import Llama
+
+llm = Llama(
+    model_path="path/to/qwen2.5-coder-1.5b-instruct.Q4_K_M.gguf",
+    n_ctx=4096,                  # full context window
+    n_threads=8,                 # tune to your CPU core count
+    n_gpu_layers=35,            # use if GPU-enabled (set to 0 if CPU-only)
+    f16_kv=True,                # use float16 key/value cache
+    use_mlock=True,            # lock model in RAM for performance
+    embedding=False,
+    verbose=False
+)
+```
+
+**Model File Tip:**
+Use quantized files like `Q4_K_M` or `Q6_K` for fast, memory-efficient inference. Store `.gguf` in a persistent path.
+
+---
+
+## 💬 3. Chat Prompt Format (Manual Role Emulation)
+
+Since GGUF models don't support structured JSON chat (like OpenAI), simulate chat roles with custom tag prefixes used by Qwen:
+
+```python
+def build_prompt(messages: list[dict]) -> str:
+    prompt = ""
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+        if role == "system":
+            prompt += f"<|system|>\n{content}\n"
+        elif role == "user":
+            prompt += f"<|user|>\n{content}\n"
+        elif role == "assistant":
+            prompt += f"<|assistant|>\n{content}\n"
+    prompt += "<|assistant|>\n"  # final instruction for model to continue
+    return prompt
+```
+
+---
+
+## 🔧 4. Tool Calling via Prompt Engineering
+
+Tool calling in GGUF models is **manual and pattern-driven**. Use an inline format like:
+
+```
+<tool_call>search_docs({"query": "how to write to a file in Go"})</tool_call>
+```
+
+### A. Detection Logic (Regex-Based):
+
+```python
+import re, json
+
+def extract_tool_calls(text: str) -> list[tuple[str, dict]]:
+    pattern = r"<tool_call>(\w+)\((.*?)\)</tool_call>"
+    matches = re.findall(pattern, text)
+    parsed = []
+    for name, raw_args in matches:
+        try:
+            args = json.loads("{" + raw_args + "}")
+            parsed.append((name, args))
+        except json.JSONDecodeError:
+            continue  # or log error
+    return parsed
+```
+
+### B. Execution and Response Injection:
+
+After executing a detected tool function:
+
+```python
+# Insert tool result back into chat history
+messages.append({
+    "role": "assistant",
+    "content": f"<tool_response>{tool_result}</tool_response>"
+})
+```
+
+---
+
+## 📤 5. Inference (Single-shot or Streaming)
+
+### A. Basic Inference Call:
+
+```python
+output = llm(prompt, temperature=0.2, top_p=0.95, stop=["<|user|>", "<|system|>"])
+reply = output["choices"][0]["text"]
+```
+
+### B. Streaming (with callback or loop):
+
+```python
+for chunk in llm(prompt, stream=True):
+    print(chunk["choices"][0]["text"], end="", flush=True)
+```
+
+---
+
+## 🧠 6. Token Management (Context-Aware)
+
+Qwen2.5-Coder supports up to 4096 tokens. Manual tracking is required to manage memory efficiently.
+
+### A. Token Counting:
+
+```python
+tokens = llm.tokenize(prompt.encode("utf-8"))
+if len(tokens) > 4096:
+    # truncate history or notify user
+```
+
+You should prune old message turns or compress history to fit inside `n_ctx`.
+
+---
+
+## 🧩 7. Adapter Pattern (Interface Abstraction)
+
+Create an abstract base to isolate GGUF/OpenAI implementations:
+
+```python
+class BaseModelAdapter:
+    def send_message(self, messages: list[dict]) -> dict:
+        raise NotImplementedError
+
+    def call_tool(self, tool_name: str, args: dict) -> str:
+        raise NotImplementedError
+```
+
+### GGUF Implementation:
+
+```python
+class GGUFModelAdapter(BaseModelAdapter):
+    def __init__(self, config):
+        self.llm = Llama(model_path=config["model_path"], n_ctx=4096)
+
+    def send_message(self, messages: list[dict]) -> dict:
+        prompt = build_prompt(messages)
+        output = self.llm(prompt)
+        return {"text": output["choices"][0]["text"]}
+
+    def call_tool(self, tool_name: str, args: dict) -> str:
+        # Call locally implemented function
+        tool_fn = TOOL_REGISTRY[tool_name]
+        return tool_fn(**args)
+```
+
+---
+
+## ⚖️ 8. Summary Comparison Table
+
+| Feature        | OpenAI                             | GGUF (Qwen2.5)                  |
+| -------------- | ---------------------------------- | ------------------------------- |
+| Interface      | HTTP JSON API                      | `llama-cpp-python`              |
+| Chat Format    | Structured JSON                    | Role-tagged prompt              |
+| Tool Calling   | Built-in schema + response handler | Manual regex + function mapping |
+| Token Handling | Automatic                          | Manual (`tokenize`)             |
+| Context        | Managed by API                     | Must prune manually             |
+| Streaming      | SSE                                | Loop over `stream=True`         |
+| Latency        | Network-dependent                  | Near-instant (local)            |
+| Cost           | Pay-per-token                      | Free (local inference)          |
+
+---
+
+## 🧪 9. Example Conversation (Manually Simulated)
+
+```plaintext
+<|system|>
+You are a helpful coding assistant.
+<|user|>
+How do I write to a file in Go?
+<|assistant|>
+<tool_call>search_docs({"query": "write to file in Go"})</tool_call>
+```
+
+After detecting tool call:
+
+```plaintext
+<|assistant|>
+<tool_response>
+You can use os.WriteFile or bufio.NewWriter in Go. Here's an example...
+</tool_response>
+```
+
+---
+
+## ✅ 10. Recommendations
+
+| Aspect         | Recommendation                                      |      |          |
+| -------------- | --------------------------------------------------- | ---- | -------- |
+| Quantization   | Use `Q4_K_M` or `Q6_K`                              |      |          |
+| Inference Mode | Use streaming for better UX                         |      |          |
+| Prompt Format  | Always use \`<                                      | role | >\` tags |
+| Tool Calling   | Require consistent prompt format and robust parsing |      |          |
+| Memory         | Enable `use_mlock=True` if RAM permits              |      |          |
+| Token Mgmt     | Log token usage and implement history pruning       |      |          |
+
+---
+
+Would you like a ready-to-use `QwenCoderAgent` class implementation in Python using this architecture?

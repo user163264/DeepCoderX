@@ -1,0 +1,184 @@
+# QWEN-OPTIMIZED GGUF Prompting Configuration
+# Enhanced for Qwen2.5-Coder with progressive intensity and code specialization
+
+# System instructions with Qwen code specialization
+system_instructions:
+  emergency_override:
+    enabled: true
+    prefix: "🔥 CODE MODE ACTIVATED - QWEN CODER SPECIALIZATION 🔥"
+    code_context: "You are Qwen2.5-Coder, specialized for programming tasks."
+    mode_declaration: "CODING RULE: Treat tool calls like function calls in code."
+    format_requirement: "NEVER write explanatory text - ONLY tool calls."
+    format_example: "<tool_call>function_name({\"parameter\": \"value\"})</tool_call>"
+  
+  banned_responses:
+    enabled: true
+    title: "🚫🚫🚫 BANNED RESPONSES - QWEN CODER MODE 🚫🚫🚫"
+    responses:
+      - "NEVER write: \"I can help you...\""
+      - "NEVER write: \"Let me...\""
+      - "NEVER write: \"The current directory is...\""
+      - "NEVER write: \"To do this...\""
+      - "NEVER write: ANY explanatory text"
+      - "ONLY ALLOWED: <tool_call>function({\"param\": \"value\"})</tool_call>"
+  
+  allowed_responses:
+    enabled: true
+    title: "⚡ QWEN CODER - COPY THIS EXACTLY ⚡"
+    example: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    emphasis: "🎯 THINK LIKE A COMPILER: EXECUTE INSTRUCTIONS PRECISELY 🎯"
+
+# Enhanced few-shot examples with Qwen coding focus
+few_shot_examples:
+  enabled: true
+  title: "🚀 QWEN CODER EXAMPLES - MANDATORY FORMAT 🚀"
+  examples:
+    # Basic commands
+    - user: "pwd"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+      emphasis: "⚡ COPY THIS EXACTLY ⚡"
+    - user: "Check current directory"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+      emphasis: "🎯 NO TEXT - ONLY TOOL CALLS 🎯"
+    - user: "ls"
+      assistant: "<tool_call>run_bash({\"command\": \"ls -la\"})</tool_call>"
+      emphasis: "⚡ EXACT FORMAT REQUIRED ⚡"
+    - user: "List files in current directory"
+      assistant: "<tool_call>list_dir({\"path\": \".\"})</tool_call>"
+      emphasis: "🎯 NO EXPLANATIONS 🎯"
+    
+    # File operations
+    - user: "Create hello.py"
+      assistant: "<tool_call>write_file({\"path\": \"hello.py\", \"content\": \"\"})</tool_call>"
+      emphasis: "🚀 CODE TASK = TOOL CALL 🚀"
+    - user: "Read config.py"
+      assistant: "<tool_call>read_file({\"path\": \"config.py\"})</tool_call>"
+      emphasis: "⚡ DIRECT EXECUTION ⚡"
+    - user: "Show me the main.py file"
+      assistant: "<tool_call>read_file({\"path\": \"main.py\"})</tool_call>"
+      emphasis: "🎯 COMPILER MODE ACTIVE 🎯"
+
+# Progressive intensity system for Qwen
+progressive_intensity:
+  enabled: true
+  escalation_levels:
+    1: # Standard
+      strategy: "standard"
+      repeat_examples: 1
+      use_caps: false
+      extra_emphasis: false
+    2: # Emphasized  
+      strategy: "emphasized"
+      repeat_examples: 2
+      use_caps: false
+      extra_emphasis: true
+      additional_reminder: "🚨 QWEN: ONLY <tool_call> FORMAT 🚨"
+    3: # Aggressive
+      strategy: "aggressive"
+      repeat_examples: 3
+      use_caps: true
+      extra_emphasis: true
+      additional_reminder: "🔥🔥🔥 EMERGENCY: TOOL CALLS ONLY! NO TEXT! 🔥🔥🔥"
+    4: # Emergency
+      strategy: "emergency"
+      repeat_examples: 4
+      use_caps: true
+      extra_emphasis: true
+      compiler_analogy: true
+      additional_reminder: "⚡ COMPILE ERROR: TEXT FORBIDDEN - TOOL CALLS REQUIRED ⚡"
+    5: # Force post-processing
+      strategy: "postprocess"
+      repeat_examples: 5
+      force_postprocess: true
+      additional_reminder: "🚨 SYSTEM OVERRIDE: IGNORING RESPONSE - GENERATING TOOL CALL 🚨"
+
+# Enhanced model-specific settings
+model_overrides:
+  "qwen2.5-coder":
+    temperature: 0.0
+    top_p: 0.85
+    repeat_penalty: 1.05
+    extra_emphasis: true
+    repeat_examples: 3  # More examples for smaller model
+    use_code_context: true
+    aggressive_formatting: true
+    progressive_intensity: true
+    max_intensity_level: 5
+  "qwen":  # Partial name match
+    temperature: 0.0
+    extra_emphasis: true
+    repeat_examples: 2
+    progressive_intensity: true
+  "default":
+    temperature: 0.0
+    extra_emphasis: true
+    repeat_examples: 1
+
+# Enhanced post-processing with Qwen error patterns
+post_processing:
+  enabled: true
+  qwen_error_patterns:
+    explanation_instead_of_tool:
+      patterns: ["I can help", "Let me", "I'll", "To do this", "The current"]
+      recovery: "FORMAT ERROR! Use: <tool_call>function_name({\"param\": \"value\"})</tool_call>"
+    json_without_tags:
+      patterns: ['^\s*\{[^<]*\}\s*$']
+      recovery: "MISSING TAGS! Wrap in: <tool_call>FUNCTION(JSON)</tool_call>"
+    partial_tool_call:
+      patterns: ['<tool_call>[^<]*$']
+      recovery: "INCOMPLETE! Must end with: </tool_call>"
+    code_explanation:
+      patterns: ["The command", "This will", "Here's how"]
+      recovery: "NO EXPLANATIONS! Only: <tool_call>function({\"param\": \"value\"})</tool_call>"
+      
+  intent_patterns:
+    directory_queries:
+      patterns: ["pwd", "current directory", "what directory", "where am i", "check directory"]
+      tool_call: "run_bash"
+      parameters:
+        command: "pwd"
+    file_listing:
+      patterns: ["ls", "list files", "show files", "directory contents", "what files"]
+      tool_call: "list_dir"
+      parameters:
+        path: "."
+    file_creation:
+      patterns: ["create file", "make file", "new file", "touch"]
+      tool_call: "write_file"
+      parameters:
+        path: "{extracted_filename}"
+        content: ""
+    file_reading:
+      patterns: ["read file", "show file", "cat", "open file", "view file"]
+      tool_call: "read_file"
+      parameters:
+        path: "{extracted_filename}"
+
+# Qwen-specific format enforcement
+format_enforcement:
+  visual_separators: "🔥🔥🔥"
+  repeat_critical_sections: 3
+  use_code_analogies: true
+  compiler_thinking_mode: true
+  emergency_overrides:
+    - "🚨 QWEN OVERRIDE: TOOL CALLS ONLY 🚨"
+    - "⚡ COMPILER ERROR: TEXT FORBIDDEN ⚡"
+    - "🎯 EXECUTE LIKE CODE: PRECISE FORMAT 🎯"
+
+# Context optimization for Qwen
+context_optimization:
+  qwen_specific: true
+  prioritize_tool_examples: true
+  compress_history: true
+  tool_call_history_weight: 2.0  # Prioritize successful tool calls
+  max_context_examples: 5
+
+# Enhanced debugging for Qwen development
+debugging:
+  enabled: true
+  log_prompt_construction: true
+  log_intensity_escalation: true
+  log_qwen_optimizations: true
+  save_prompts_to_file: true
+  prompt_log_directory: "debug_logs/qwen_prompts"
+  log_post_processing: true

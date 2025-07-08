@@ -1,0 +1,26 @@
+# Config package for DeepCoderX
+# This package contains configuration modules for various components
+
+# Import the main config object from the root config.py
+import sys
+from pathlib import Path
+
+# Add the parent directory to sys.path to import from root config.py
+parent_dir = str(Path(__file__).parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Import the main config from root config_module.py
+import config_module
+config = config_module.config
+Config = config_module.Config
+
+# Import GGUF prompting config functionality
+from .gguf_prompting_config import get_gguf_prompting_config, reload_gguf_prompting_config
+
+__all__ = [
+    'config',
+    'Config',
+    'get_gguf_prompting_config',
+    'reload_gguf_prompting_config'
+]

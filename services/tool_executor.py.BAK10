@@ -1,0 +1,352 @@
+# services/tool_executor.py
+
+import json
+import subprocess
+from typing import Dict, Any
+from pathlib import Path
+
+from config import config
+from models.session import CommandContext
+from utils.logging import console
+from services.error_handler import ErrorHandler, tool_error, file_error, path_security_error, validation_error
+
+
+class ToolExecutor:
+    """Shared tool execution logic for both local and cloud AI handlers."""
+    
+    def __init__(self, ctx: CommandContext, use_complex_path_resolution: bool = False):
+        self.ctx = ctx
+        self.use_complex_path_resolution = use_complex_path_resolution
+    
+    def execute_tool(self, tool_call: Dict[str, Any]) -> str:
+        """Execute a tool call and return the result as a string."""
+        tool_name = tool_call.get("tool")
+
+        if tool_name == "delete_path":
+            return tool_error("delete_path", "Tool is disabled for security", 
+                            "Use other tools like write_file to create new content")
+
+        if tool_name == "run_bash":
+            return self._execute_bash_command(tool_call)
+        
+        # File operations require path
+        path = tool_call.get("path")
+        if not path:
+            return self._get_helpful_path_error(tool_name)
+
+        # Resolve path based on configuration
+        try:
+            path_for_mcp = self._resolve_path(path)
+        except Exception as e:
+            return self._get_path_resolution_error(path, str(e))
+
+        if tool_name == "read_file":
+            return self._execute_read_file(path_for_mcp)
+        elif tool_name == "write_file":
+            content = tool_call.get("content", "")
+            return self._execute_write_file(path_for_mcp, content)
+        elif tool_name == "list_dir":
+            return self._execute_list_dir(path_for_mcp)
+        elif tool_name == "stat":
+            return self._execute_stat(path_for_mcp)
+        elif tool_name == "move_file":
+            destination = tool_call.get("destination")
+            if not destination:
+                return validation_error("destination", "missing", "a valid destination path", 
+                                      '{"tool": "move_file", "source": "old.txt", "destination": "new.txt"}')
+            try:
+                dest_for_mcp = self._resolve_path(destination)
+            except Exception as e:
+                return self._get_path_resolution_error(destination, str(e))
+            overwrite = tool_call.get("overwrite", False)
+            return self._execute_move_file(path_for_mcp, dest_for_mcp, overwrite)
+        elif tool_name == "mkdir":
+            parents = tool_call.get("parents", True)
+            exist_ok = tool_call.get("exist_ok", True)
+            return self._execute_mkdir(path_for_mcp, parents, exist_ok)
+        else:
+            return validation_error("tool", tool_name, "one of: read_file, write_file, list_dir, stat, move_file, mkdir, run_bash",
+                                  '{"tool": "read_file", "path": "config.py"}'))
+
+    def _get_helpful_path_error(self, tool_name: str) -> str:
+        """Generate helpful error message when path is missing."""
+        examples = {
+            "read_file": '{"tool": "read_file", "path": "config.py"}',
+            "write_file": '{"tool": "write_file", "path": "script.py", "content": "print(\\"hello\\")"}',
+            "list_dir": '{"tool": "list_dir", "path": "."}'
+        }
+        
+        example = examples.get(tool_name, f'{{"tool": "{tool_name}", "path": "filename.txt"}}')
+        
+        return validation_error("path", "missing", "a valid file path", example)
+
+    def _get_path_resolution_error(self, original_path: str, error_msg: str) -> str:
+        """Generate helpful error message for path resolution issues."""
+        
+        # Check if it looks like an absolute path
+        if original_path.startswith('/') or original_path.startswith('\\'):
+            return path_security_error(original_path, 
+                                     "Absolute paths not allowed. Use relative paths like 'script.py' or './folder/file.txt'")
+        
+        # Check if it's outside the sandbox
+        if "outside" in error_msg.lower() or "sandbox" in error_msg.lower():
+            return path_security_error(original_path, 
+                                     "Path is outside the allowed project directory")
+        
+        # Generic path error with helpful suggestions
+        return file_error("resolve", original_path, error_msg, 
+                         "Use relative paths like 'filename.txt' or check spelling")
+
+    def _execute_bash_command(self, tool_call: Dict[str, Any]) -> str:
+        """Execute a bash command."""
+        command = tool_call.get("command")
+        if not command:
+            return validation_error("command", "missing", "a shell command", 
+                                  '{"tool": "run_bash", "command": "ls -la"}')
+        
+        try:
+            process = subprocess.run(
+                command, 
+                shell=True, 
+                capture_output=True, 
+                text=True, 
+                timeout=config.COMMAND_TIMEOUT, 
+                cwd=self.ctx.current_dir if hasattr(self.ctx, 'current_dir') else self.ctx.root_path
+            )
+            
+            stdout = process.stdout.strip()
+            stderr = process.stderr.strip()
+            
+            if process.returncode == 0:
+                return f"✅ Command executed successfully:\n{stdout}" if stdout else "✅ Command executed successfully (no output)"
+            else:
+                return f"❌ Command failed (exit code {process.returncode}):\n{stderr}" if stderr else f"❌ Command failed (exit code {process.returncode})"
+                
+        except subprocess.TimeoutExpired:
+            return tool_error("run_bash", f"Command '{command}' timed out after {config.COMMAND_TIMEOUT} seconds",
+                            "Try a simpler command or increase timeout in configuration")
+        except Exception as e:
+            return tool_error("run_bash", f"Failed to execute command '{command}': {e}",
+                            "Check command syntax and ensure it's safe to run")
+
+    def _resolve_path(self, path: str) -> str:
+        """Resolve path based on configuration."""
+        if self.use_complex_path_resolution:
+            # Complex path resolution for LocalCodingHandler
+            try:
+                # Convert to Path object and resolve
+                path_obj = Path(path)
+                
+                # If it's already absolute, check if it's within root_path
+                if path_obj.is_absolute():
+                    if not path_obj.is_relative_to(self.ctx.root_path):
+                        raise ValueError(f"Absolute path '{path}' is outside the project directory. Use relative paths like 'script.py' or './file.txt' instead.")
+                    resolved_path = path_obj
+                else:
+                    # Relative path - resolve relative to root_path
+                    resolved_path = (self.ctx.root_path / path).resolve()
+                
+                # Double-check sandbox constraints
+                if not resolved_path.is_relative_to(self.ctx.root_path):
+                    raise ValueError(f"Path '{path}' resolves outside the project directory. Use relative paths that stay within the project.")
+                
+                # Return path relative to root_path for MCP client
+                return str(resolved_path.relative_to(self.ctx.root_path))
+                
+            except Exception as e:
+                if "outside" in str(e) or "project directory" in str(e):
+                    raise e  # Re-raise our custom message
+                else:
+                    raise ValueError(f"Invalid path '{path}'. Use relative paths like 'script.py' or './folder/file.txt'.")
+        else:
+            # Simple path resolution for DeepSeekAnalysisHandler
+            return path
+
+    def _execute_read_file(self, path: str) -> str:
+        """Execute read_file operation."""
+        response = self.ctx.mcp_client.read_file(path)
+        
+        if "error" in response:
+            error_msg = response["error"].lower()
+            
+            if any(keyword in error_msg for keyword in ["unauthorized", "invalid api key", "path traversal"]):
+                return path_security_error(path, "File access denied - operation outside allowed sandbox")
+            
+            elif "not found" in error_msg or "no such file" in error_msg:
+                return file_error("read", path, "File not found", 
+                                "Check filename spelling or use list_dir to see available files")
+            
+            else:
+                return file_error("read", path, response.get('error', 'Unknown error'))
+        
+        content = response.get("content", "")
+        if not content:
+            return f"📄 File '{path}' is empty or could not be read."
+        
+        return f"📄 Content of '{path}':\n{content}"
+
+    def _execute_write_file(self, path: str, content: str) -> str:
+        """Execute write_file operation."""
+        response = self.ctx.mcp_client.write_file(path, content)
+        
+        if "error" in response:
+            error_msg = response["error"].lower()
+            
+            if any(keyword in error_msg for keyword in ["unauthorized", "invalid api key", "path traversal"]):
+                return path_security_error(path, "File write denied - operation outside allowed sandbox")
+            
+            elif "permission" in error_msg:
+                return file_error("write", path, "Insufficient permissions", 
+                                "Check if directory exists and file isn't read-only")
+            
+            else:
+                return file_error("write", path, response.get('error', 'Unknown error'))
+        
+        status = response.get("status", "unknown")
+        if status == "success":
+            content_preview = content[:50] + "..." if len(content) > 50 else content
+            return f"✅ Successfully wrote to '{path}' ({len(content)} characters)\nContent preview: {content_preview}"
+        else:
+            return f"❌ Write operation may have failed: {status}"
+
+    def _execute_list_dir(self, path: str) -> str:
+        """Execute list_dir operation."""
+        response = self.ctx.mcp_client.list_dir(path)
+        
+        if "error" in response:
+            error_msg = response["error"].lower()
+            
+            if any(keyword in error_msg for keyword in ["unauthorized", "invalid api key", "path traversal"]):
+                return path_security_error(path, "Directory access denied - operation outside allowed sandbox")
+            
+            elif "not found" in error_msg or "no such file" in error_msg:
+                return file_error("list", path, "Directory not found", 
+                                "Use '.' for current directory or check directory name spelling")
+            
+            else:
+                return file_error("list", path, response.get('error', 'Unknown error'))
+        
+        if "result" in response:
+            if self.use_complex_path_resolution:
+                # Complex formatting for LocalCodingHandler
+                result_data = response["result"]
+                if isinstance(result_data, dict):
+                    files = result_data.get("files", [])
+                    dirs = result_data.get("directories", [])
+                    
+                    output = f"📁 Contents of '{path}':\n"
+                    if dirs:
+                        output += "📂 Directories:\n" + "\n".join(f"  📁 {d}" for d in sorted(dirs)) + "\n"
+                    if files:
+                        output += "📄 Files:\n" + "\n".join(f"  📄 {f}" for f in sorted(files))
+                    
+                    if not dirs and not files:
+                        output += "  (empty directory)"
+                    
+                    return output
+                else:
+                    return f"📁 Contents of '{path}':\n{json.dumps(result_data, indent=2)}"
+            else:
+                # Simple formatting for DeepSeekAnalysisHandler
+                items = response["result"]
+                files = items.get("files", [])
+                dirs = items.get("directories", [])
+                return f"Directory listing for '{path}':\nFiles: {files}\nDirectories: {dirs}"
+        else:
+            return file_error("list", path, "Invalid response format for directory listing")
+    
+    # ENHANCED TOOL METHODS - OpenAPI 3.1 MCP File System Compliance
+    
+    def _execute_stat(self, path: str) -> str:
+        """Execute stat operation to get file/directory metadata."""
+        response = self.ctx.mcp_client.stat(path)
+        
+        if "error" in response:
+            error_msg = response["error"].lower()
+            
+            if any(keyword in error_msg for keyword in ["unauthorized", "invalid api key", "path traversal"]):
+                return path_security_error(path, "File stat denied - operation outside allowed sandbox")
+            
+            elif "not found" in error_msg or "no such file" in error_msg:
+                return file_error("stat", path, "File or directory not found", 
+                                "Check path spelling or use list_dir to see available items")
+            
+            else:
+                return file_error("stat", path, response.get('error', 'Unknown error'))
+        
+        if "result" in response:
+            metadata = response["result"]
+            
+            if self.use_complex_path_resolution:
+                # Complex formatting for LocalCodingHandler
+                output = f"📊 Metadata for '{path}':\n"
+                output += f"Type: {metadata.get('type', 'unknown')}\n"
+                output += f"Size: {metadata.get('size', 'unknown')} bytes\n"
+                if metadata.get('permissions'):
+                    output += f"Permissions: {metadata['permissions']}\n"
+                if metadata.get('created'):
+                    output += f"Created: {metadata['created']}\n"
+                if metadata.get('modified'):
+                    output += f"Modified: {metadata['modified']}\n"
+                if metadata.get('accessed'):
+                    output += f"Accessed: {metadata['accessed']}\n"
+                return output
+            else:
+                # Simple formatting for DeepSeekAnalysisHandler
+                return f"File metadata for '{path}': {json.dumps(metadata, indent=2)}"
+        else:
+            return file_error("stat", path, "Invalid response format for file metadata")
+    
+    def _execute_move_file(self, source: str, destination: str, overwrite: bool) -> str:
+        """Execute move_file operation to move/rename files or directories."""
+        response = self.ctx.mcp_client.move_file(source, destination, overwrite)
+        
+        if "error" in response:
+            error_msg = response["error"].lower()
+            
+            if any(keyword in error_msg for keyword in ["unauthorized", "invalid api key", "path traversal"]):
+                return path_security_error(source, "File move denied - operation outside allowed sandbox")
+            
+            elif "not found" in error_msg:
+                return file_error("move", source, "Source file or directory not found", 
+                                "Check source path spelling or use list_dir to see available items")
+            
+            elif "exists" in error_msg and not overwrite:
+                return file_error("move", destination, "Destination already exists", 
+                                "Use overwrite=true parameter or choose different destination")
+            
+            else:
+                return file_error("move", f"{source} -> {destination}", response.get('error', 'Unknown error'))
+        
+        status = response.get("status", "unknown")
+        if status == "success":
+            return f"✅ Successfully moved '{source}' to '{destination}'"
+        else:
+            return f"❌ Move operation may have failed: {status}"
+    
+    def _execute_mkdir(self, path: str, parents: bool, exist_ok: bool) -> str:
+        """Execute mkdir operation to create directories."""
+        response = self.ctx.mcp_client.mkdir(path, parents, exist_ok)
+        
+        if "error" in response:
+            error_msg = response["error"].lower()
+            
+            if any(keyword in error_msg for keyword in ["unauthorized", "invalid api key", "path traversal"]):
+                return path_security_error(path, "Directory creation denied - operation outside allowed sandbox")
+            
+            elif "exists" in error_msg and not exist_ok:
+                return file_error("mkdir", path, "Directory already exists", 
+                                "Use exist_ok=true parameter or choose different name")
+            
+            elif "permission" in error_msg:
+                return file_error("mkdir", path, "Insufficient permissions", 
+                                "Check parent directory permissions")
+            
+            else:
+                return file_error("mkdir", path, response.get('error', 'Unknown error'))
+        
+        status = response.get("status", "unknown")
+        if status == "success":
+            return f"✅ Successfully created directory '{path}'"
+        else:
+            return f"❌ Directory creation may have failed: {status}"

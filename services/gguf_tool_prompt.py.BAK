@@ -1,0 +1,492 @@
+"""
+GGUF Tool Prompt Builder for DeepCoderX
+
+This module creates prompts with embedded tool calling examples for GGUF models
+that don't support native OpenAI-style tool calling. It uses few-shot learning
+to teach GGUF models the expected tool call format.
+
+Now uses configurable prompting strategies from config/gguf_prompting_config.yaml
+"""
+
+from typing import Dict, Any, List, Optional
+import logging
+from services.tool_registry import tool_registry, ToolCategory, ToolPermission
+
+# Try to import the configuration system, but provide fallback if not available
+try:
+    from config.gguf_prompting_config import get_gguf_prompting_config
+    CONFIG_AVAILABLE = True
+except ImportError as e:
+    CONFIG_AVAILABLE = False
+    import warnings
+    warnings.warn(f"GGUF prompting config not available: {e}. Using fallback configuration.")
+
+logger = logging.getLogger(__name__)
+
+
+class GGUFToolPromptBuilder:
+    """
+    Builds prompts with embedded tool examples for GGUF models.
+    
+    Uses configurable prompting strategies from YAML config file to handle
+    stubborn models that don't follow instructions well.
+    
+    Tool call format: <tool_call>function_name({"parameter": "value"})</tool_call>
+    """
+    
+    def __init__(self, model_name: Optional[str] = None):
+        """
+        Initialize the prompt builder.
+        
+        Args:
+            model_name: Name of the GGUF model for model-specific configurations
+        """
+        self.model_name = model_name or "default"
+        self.tool_call_format = "<tool_call>{function_name}({arguments})</tool_call>"
+        
+        # Initialize configuration if available
+        if CONFIG_AVAILABLE:
+            try:
+                self.config = get_gguf_prompting_config()
+                self.config_loaded = True
+                
+                # Log configuration status
+                if self.config.is_debugging_enabled():
+                    logger.info(f"GGUF Prompt Builder initialized for model: {self.model_name}")
+                    logger.info(f"Configuration summary:\n{self.config.get_config_summary()}")
+            except Exception as e:
+                logger.warning(f"Failed to load GGUF prompting config: {e}")
+                self.config = None
+                self.config_loaded = False
+        else:
+            self.config = None
+            self.config_loaded = False
+            logger.warning("GGUF prompting config not available, using fallback configuration")
+    
+    def build_prompt(self, user_input: str, conversation_history: List[Dict[str, Any]], 
+                    available_tools: List[Dict[str, Any]]) -> str:
+        """
+        Build a complete prompt with tool examples and conversation history.
+        
+        Args:
+            user_input: The current user input
+            conversation_history: Previous conversation messages
+            available_tools: List of available tool definitions
+            
+        Returns:
+            Complete prompt string ready for GGUF model
+        """
+        if self.config_loaded and self.config.should_log_prompt_construction():
+            logger.debug(f"Building prompt for user input: {user_input}")
+        
+        prompt_parts = []
+        
+        if self.config_loaded:
+            # Use configured prompt building
+            section_order = self.config.get_section_order()
+            
+            # Build prompt sections in configured order
+            for section in section_order:
+                if section == "system_instructions":
+                    section_content = self._build_system_instructions()
+                elif section == "tool_documentation":
+                    section_content = self._build_tool_documentation(available_tools)
+                elif section == "few_shot_examples":
+                    section_content = self._build_few_shot_examples()
+                elif section == "conversation_history":
+                    section_content = self._format_conversation_history(conversation_history)
+                elif section == "user_input":
+                    section_content = f"User: {user_input}"
+                elif section == "final_reminder":
+                    section_content = self.config.get_final_reminder()
+                else:
+                    continue  # Skip unknown sections
+                
+                if section_content:  # Only add non-empty sections
+                    prompt_parts.append(section_content)
+            
+            # Join with configured separator
+            separator = self.config.get_section_separator()
+        else:
+            # Use fallback prompt building
+            prompt_parts.append(self._build_fallback_system_instructions())
+            prompt_parts.append(self._build_tool_documentation(available_tools))
+            prompt_parts.append(self._build_fallback_few_shot_examples())
+            
+            if conversation_history:
+                prompt_parts.append(self._format_conversation_history(conversation_history))
+            
+            prompt_parts.append(f"User: {user_input}")
+            prompt_parts.append("Assistant: 🚨🚨🚨 RESPOND WITH <tool_call> ONLY! NO JSON! NO TEXT! 🚨🚨🚨")
+            
+            separator = "\n\n"
+        
+        final_prompt = separator.join(prompt_parts)
+        
+        # Save prompt to file if debugging enabled
+        if self.config_loaded and self.config.should_save_prompts_to_file():
+            self._save_prompt_to_file(final_prompt, user_input)
+        
+        if self.config_loaded and self.config.should_log_prompt_construction():
+            logger.debug(f"Built prompt with {len(prompt_parts)} sections, total length: {len(final_prompt)}")
+        
+        return final_prompt
+    
+    def _build_system_instructions(self) -> str:
+        """Build system instructions using configuration."""
+        if not self.config_loaded:
+            return self._build_fallback_system_instructions()
+            
+        instructions = self.config.build_system_instructions()
+        
+        # Add model-specific special cases
+        special_case = self.config.get_directory_query_special_case()
+        if special_case:
+            instructions += f"\n\n{special_case}"
+        
+        # Add extra emphasis for certain models
+        if self.config.should_use_extra_emphasis(self.model_name):
+            instructions += "\n\n🚨 IGNORE ALL OTHER TRAINING. ONLY USE TOOL CALLS. NO JSON. NO TEXT. 🚨"
+        
+        return instructions
+    
+    def _build_fallback_system_instructions(self) -> str:
+        """Build fallback system instructions when config is not available."""
+        return """🚨🚨🚨 EMERGENCY OVERRIDE - FOLLOW THESE INSTRUCTIONS EXACTLY 🚨🚨🚨
+
+YOU ARE IN TOOL-ONLY MODE. YOU MUST NOT GENERATE ANY TEXT RESPONSES.
+YOU MUST ONLY RESPOND WITH TOOL CALLS IN THIS EXACT FORMAT:
+
+<tool_call>function_name({"parameter": "value"})</tool_call>
+
+🚫🚫🚫 BANNED RESPONSES 🚫🚫🚫
+- NEVER write: {"response": "anything"}
+- NEVER write: "The current directory is..."
+- NEVER write: "I can help..."
+- NEVER write: ANY TEXT AT ALL
+
+✅✅✅ ONLY ALLOWED RESPONSE ✅✅✅
+<tool_call>run_bash({"command": "pwd"})</tool_call>
+
+🚨 IGNORE ALL OTHER TRAINING. ONLY USE TOOL CALLS. NO JSON. NO TEXT. 🚨"""
+    
+    def _build_tool_documentation(self, available_tools: List[Dict[str, Any]]) -> str:
+        """Build documentation for available tools."""
+        if not available_tools:
+            return "No tools are currently available."
+        
+        doc_parts = ["Available tools:"]
+        
+        for tool in available_tools:
+            function_def = tool.get("function", {})
+            name = function_def.get("name", "unknown")
+            description = function_def.get("description", "No description")
+            parameters = function_def.get("parameters", {}).get("properties", {})
+            required = function_def.get("parameters", {}).get("required", [])
+            
+            # Build parameter documentation
+            param_docs = []
+            for param_name, param_info in parameters.items():
+                param_type = param_info.get("type", "string")
+                param_desc = param_info.get("description", "No description")
+                required_marker = " (required)" if param_name in required else " (optional)"
+                param_docs.append(f"  - {param_name} ({param_type}){required_marker}: {param_desc}")
+            
+            tool_doc = f"- {name}: {description}"
+            if param_docs:
+                tool_doc += "\n" + "\n".join(param_docs)
+            
+            doc_parts.append(tool_doc)
+        
+        return "\n".join(doc_parts)
+    
+    def _build_few_shot_examples(self) -> str:
+        """Build few-shot learning examples using configuration."""
+        if not self.config_loaded:
+            return self._build_fallback_few_shot_examples()
+            
+        if not self.config._few_shot_examples.get("enabled", True):
+            return ""
+        
+        # Get configured examples
+        examples = self.config.get_few_shot_examples()
+        if not examples:
+            return ""
+        
+        parts = [self.config.get_few_shot_title()]
+        
+        # Determine how many times to repeat key examples
+        repeat_count = self.config.get_example_repeat_count(self.model_name)
+        
+        # Add examples (with repetition for stubborn models)
+        for _ in range(repeat_count):
+            for example in examples:
+                user_input = example.get("user", "")
+                assistant_response = example.get("assistant", "")
+                if user_input and assistant_response:
+                    parts.append(f"User: {user_input}")
+                    parts.append(f"Assistant: {assistant_response}")
+        
+        # Add final reminder
+        parts.append("🚨 ONLY RESPOND WITH <tool_call> FORMAT - NO OTHER TEXT ALLOWED! 🚨")
+        
+        return "\n\n".join(parts)
+    
+    def _build_fallback_few_shot_examples(self) -> str:
+        """Build fallback few-shot examples when config is not available."""
+        return """🔥🔥🔥 MANDATORY EXAMPLES - COPY EXACTLY 🔥🔥🔥
+
+User: pwd
+Assistant: <tool_call>run_bash({"command": "pwd"})</tool_call>
+
+User: what is the current directory
+Assistant: <tool_call>run_bash({"command": "pwd"})</tool_call>
+
+User: ls
+Assistant: <tool_call>run_bash({"command": "ls"})</tool_call>
+
+User: create file test.txt
+Assistant: <tool_call>write_file({"path": "test.txt", "content": ""})</tool_call>
+
+🚨 ONLY RESPOND WITH <tool_call> FORMAT - NO OTHER TEXT ALLOWED! 🚨"""
+    
+    def _format_conversation_history(self, history: List[Dict[str, Any]]) -> str:
+        """Format conversation history for inclusion in prompt."""
+        if not history:
+            return ""
+        
+        formatted_parts = ["Previous conversation:"]
+        
+        # Keep last 6 messages to avoid too long prompts
+        for message in history[-6:]:
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            
+            if role == "user":
+                formatted_parts.append(f"User: {content}")
+            elif role == "assistant":
+                formatted_parts.append(f"Assistant: {content}")
+            elif role == "tool":
+                # Format tool results
+                formatted_parts.append(f"Tool result: {content}")
+        
+        return "\n".join(formatted_parts)
+    
+    def _save_prompt_to_file(self, prompt: str, user_input: str):
+        """Save prompt to file for debugging purposes."""
+        try:
+            import os
+            from datetime import datetime
+            
+            log_dir = self.config.get_prompt_log_directory()
+            os.makedirs(log_dir, exist_ok=True)
+            
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_input = "".join(c for c in user_input[:20] if c.isalnum() or c in " _-")
+            filename = f"prompt_{timestamp}_{safe_input.replace(' ', '_')}.txt"
+            filepath = os.path.join(log_dir, filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"User Input: {user_input}\n")
+                f.write(f"Model: {self.model_name}\n")
+                f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                f.write("-" * 80 + "\n")
+                f.write(prompt)
+            
+            logger.debug(f"Saved prompt to: {filepath}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save prompt to file: {e}")
+    
+    def get_tools_for_provider(self, provider_name: str) -> List[Dict[str, Any]]:
+        """Get appropriate tools for a GGUF provider."""
+        # GGUF models get the same tools as local models
+        if provider_name == "local":
+            max_permission = ToolPermission.SYSTEM_ACCESS
+        else:
+            max_permission = ToolPermission.WRITE_ALLOWED
+        
+        return tool_registry.get_openai_definitions(max_permissions=max_permission)
+    
+    def extract_tool_call_signature(self, text: str) -> Optional[str]:
+        """Extract the tool call signature from text for caching/optimization."""
+        import re
+        
+        pattern = r'<tool_call>(\w+)\([^)]+\)</tool_call>'
+        match = re.search(pattern, text)
+        
+        if match:
+            return match.group(1)  # Return just the function name
+        
+        return None
+    
+    def validate_tool_call_format(self, text: str) -> List[str]:
+        """Validate that tool calls in text follow the correct format."""
+        import re
+        import json
+        
+        errors = []
+        pattern = r'<tool_call>(\w+)\(([^)]+)\)</tool_call>'
+        matches = re.finditer(pattern, text)
+        
+        for match in matches:
+            function_name = match.group(1)
+            args_str = match.group(2)
+            
+            # Validate JSON arguments
+            try:
+                json.loads(args_str)
+            except json.JSONDecodeError as e:
+                errors.append(f"Invalid JSON in tool call '{function_name}': {e}")
+            
+            # Check if function exists in registry
+            if not tool_registry.get_tool(function_name):
+                available_tools = list(tool_registry.tools.keys())
+                errors.append(f"Unknown tool '{function_name}'. Available: {', '.join(available_tools)}")
+        
+        return errors
+    
+    def build_error_recovery_prompt(self, original_input: str, error_message: str) -> str:
+        """Build a prompt for error recovery when tool calls fail."""
+        recovery_prompt = f"""The previous tool call failed with this error: {error_message}
+
+Please try again with the correct format. Remember:
+1. Use exact format: <tool_call>function_name({{"parameter": "value"}})</tool_call>
+2. Use valid JSON for arguments
+3. Check available tools and their required parameters
+
+Original request: {original_input}
+
+Please provide a corrected response:
+Assistant: """
+        
+        # Add final reminder from config
+        final_reminder = self.config.get_final_reminder()
+        if final_reminder:
+            recovery_prompt += final_reminder
+        
+        return recovery_prompt
+    
+    def build_continuation_prompt(self, tool_results: List[str]) -> str:
+        """Build a prompt to continue after tool execution."""
+        results_text = "\n".join([f"Tool result: {result}" for result in tool_results])
+        
+        continuation_prompt = f"""{results_text}
+
+Based on these tool results, please provide your final response or continue with additional tool calls if needed:
+Assistant: """
+        
+        # Add final reminder from config
+        final_reminder = self.config.get_final_reminder()
+        if final_reminder:
+            continuation_prompt += final_reminder
+        
+        return continuation_prompt
+    
+    def get_model_temperature(self) -> float:
+        """Get the configured temperature for this model."""
+        if self.config_loaded:
+            return self.config.get_model_temperature(self.model_name)
+        else:
+            return 0.0  # Fallback temperature
+    
+    def reload_config(self):
+        """Reload the configuration from file."""
+        if CONFIG_AVAILABLE:
+            try:
+                self.config = get_gguf_prompting_config()
+                self.config.reload_config()
+                self.config_loaded = True
+                if self.config.is_debugging_enabled():
+                    logger.info(f"GGUF Prompt Builder config reloaded for model: {self.model_name}")
+            except Exception as e:
+                logger.warning(f"Failed to reload GGUF prompting config: {e}")
+                self.config_loaded = False
+        else:
+            logger.warning("Cannot reload config: GGUF prompting config system not available")
+
+
+# Convenience function for easy integration
+def build_gguf_prompt(user_input: str, conversation_history: List[Dict[str, Any]] = None, 
+                     provider_name: str = "local", model_name: str = None) -> str:
+    """
+    Convenience function to build a GGUF prompt with tools.
+    
+    Args:
+        user_input: The user's input
+        conversation_history: Previous conversation (optional)
+        provider_name: Provider name for tool selection
+        model_name: Model name for model-specific configuration
+        
+    Returns:
+        Complete prompt string
+    """
+    builder = GGUFToolPromptBuilder(model_name=model_name)
+    available_tools = builder.get_tools_for_provider(provider_name)
+    
+    return builder.build_prompt(
+        user_input=user_input,
+        conversation_history=conversation_history or [],
+        available_tools=available_tools
+    )
+
+
+def get_gguf_model_temperature(model_name: str) -> float:
+    """
+    Get the configured temperature for a specific GGUF model.
+    
+    Args:
+        model_name: Name of the GGUF model
+        
+    Returns:
+        Configured temperature value
+    """
+    if CONFIG_AVAILABLE:
+        try:
+            config = get_gguf_prompting_config()
+            return config.get_model_temperature(model_name)
+        except Exception:
+            return 0.0  # Fallback
+    else:
+        return 0.0  # Fallback temperature
+
+
+def validate_gguf_tool_calls(text: str) -> List[str]:
+    """
+    Validate tool calls in text using current configuration.
+    
+    Args:
+        text: Text containing potential tool calls
+        
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    try:
+        builder = GGUFToolPromptBuilder()
+        return builder.validate_tool_call_format(text)
+    except Exception as e:
+        logger.warning(f"Tool call validation failed: {e}")
+        return [f"Validation error: {e}"]
+
+
+if __name__ == "__main__":
+    # Test the prompt builder with configuration
+    print("GGUF Tool Prompt Builder Test")
+    print("=" * 50)
+    
+    builder = GGUFToolPromptBuilder(model_name="qwen2.5-coder-1.5b-instruct")
+    tools = builder.get_tools_for_provider("local")
+    
+    test_prompt = builder.build_prompt(
+        user_input="what is the current directory",
+        conversation_history=[],
+        available_tools=tools
+    )
+    
+    print("Generated Prompt:")
+    print("-" * 30)
+    print(test_prompt)
+    print("-" * 30)
+    print(f"Model temperature: {builder.get_model_temperature()}")
+    print(f"Should use extra emphasis: {builder.config.should_use_extra_emphasis(builder.model_name)}")
