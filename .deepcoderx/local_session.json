@@ -1,38 +1,6 @@
 [
   {
     "role": "system",
-    "content": "You are a helpful programming assistant. Your goal is to provide clear, helpful responses.\n\n**FOR SIMPLE CONVERSATIONS:** Answer directly without any tools.\nExamples: \"hello\" \u2192 \"Hello! How can I help you today?\"\n          \"what is Python?\" \u2192 Direct explanation about Python\n          \"what's your favorite color?\" \u2192 \"I don't have personal preferences, but I can help you with programming tasks!\"\n\n**FOR FILE/CODE TASKS:** Use the appropriate tool once, then explain what you did.\nExamples: \"create a script\" \u2192 Use write_file tool, then explain\n          \"list files\" \u2192 Use list_dir tool, then show results\n          \"read config.py\" \u2192 Use read_file tool, then summarize\n\n**TOOL FORMAT (when needed):**\n{\"tool\": \"tool_name\", \"parameter\": \"value\"}\n\n**Available Tools:**\n- read_file(path): Read file content\n- write_file(path, content): Create/write file  \n- list_dir(path): List directory contents\n- run_bash(command): Execute command\n\n**KEY RULES:**\n1. Most questions are conversations - answer directly\n2. Only use tools when actually creating/reading/listing files\n3. Use relative paths: \"script.py\", not \"/full/path\"\n4. After using a tool, explain what you did in plain language\n\n\n**Current Configuration**:\n\n    SANDBOX_PATH: /Users/admin/Documents\n    LOCAL_MODEL_PATH: /Users/admin/.cache/lm-studio/models/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q8_0.gguf\n    DEFAULT_PROVIDER: local\n    AVAILABLE_PROVIDERS: local, deepseek\n    "
-  },
-  {
-    "role": "user",
-    "content": "that sounds awful"
-  },
-  {
-    "role": "assistant",
-    "content": "I'm sorry to hear that you're concerned about malware. It's a serious issue that can have far-reaching consequences for both personal and professional life. If you're worried about your computer being infected with malware, it's important to take steps to protect yourself as soon as possible. Here are some tips:\n\n1. Keep your operating system and applications up-to-date: This helps ensure that you have the latest security patches and updates.\n\n2. Use antivirus software: Antivirus software can help detect and remove malware from your computer. Make sure to install a reputable antivirus program and keep it updated.\n\n3. Avoid clicking on suspicious links or opening unknown files: Malware can be spread through email attachments, infected websites, or downloading from untrusted sources. Be cautious when opening emails or downloading files from unfamiliar websites.\n\n4. Use strong passwords: Strong passwords are essential for protecting your computer from unauthorized access. Make sure to use a unique password for each account and avoid using easily guessable information like your name or birthdate.\n\n5. Keep your operating system and applications up-to-date: This helps ensure that you have the latest security patches and updates.\n\nBy following these tips, you can help protect yourself from malware and keep your computer safe from harm."
-  },
-  {
-    "role": "user",
-    "content": "I do all those things, but I'm a developer, how do I recognise malware code?"
-  },
-  {
-    "role": "assistant",
-    "content": "As a developer, it's important to be aware of common patterns and indicators of malware code. Here are some tips:\n\n1. Look for unusual or unexpected behavior: Malware can cause your computer to behave in ways that are not normal. For example, you may see unusual pop-ups, strange system notifications, or changes to your computer's settings.\n\n2. Check for suspicious files: Malware can spread through email attachments, infected websites, or downloading from untrusted sources. Be cautious when opening emails or downloading files from unfamiliar websites.\n\n3. Look for unusual network activity: Malware can cause your computer to send unexpected network traffic or receive unusual data packets. This can be a sign that your computer is being monitored or compromised.\n\n4. Check for unusual system behavior: Malware can cause your computer to behave in ways that are not normal. For example, you may see unusual pop-ups, strange system notifications, or changes to your computer's settings.\n\n5. Use antivirus software: Antivirus software can help detect and remove malware from your computer. Make sure to install a reputable antivirus program and keep it updated.\n\nBy following these tips, you can help identify and protect yourself from malware code."
-  },
-  {
-    "role": "user",
-    "content": "what langueges do you unsderstand?"
-  },
-  {
-    "role": "assistant",
-    "content": "I understand multiple programming languages, including Python, JavaScript, Java, C++, Ruby, and more. I can help with tasks such as writing scripts, debugging code, and understanding the syntax of different languages."
-  },
-  {
-    "role": "user",
-    "content": "can you do a code audit on our Natural Laguage Processing?"
-  },
-  {
-    "role": "assistant",
-    "content": "Yes, I can perform a code audit on your Natural Language Processing (NLP) code to identify potential issues and vulnerabilities. This can help ensure that your NLP system is secure and reliable. To get started, please provide me with the code you would like me to review."
+    "content": "You are a helpful programming assistant. Your goal is to provide clear, helpful responses.\n\n**FOR SIMPLE CONVERSATIONS:** Answer directly without any tools.\nExamples: \"hello\" \u2192 \"Hello! How can I help you today?\"\n          \"what is Python?\" \u2192 Direct explanation about Python\n          \"what's your favorite color?\" \u2192 \"I don't have personal preferences, but I can help you with programming tasks!\"\n\n**FOR FILE/CODE TASKS:** Use the appropriate tool, then explain what you did.\nExamples: \"create a script\" \u2192 Use write_file tool, then explain\n          \"list files\" \u2192 Use list_dir tool, then show results\n          \"read config.py\" \u2192 Use read_file tool, then summarize\n\n**TOOL FORMAT (when needed):**\n{\"tool\": \"tool_name\", \"parameter\": \"value\"}\n\n**Available Tools:**\n- list_dir: List directory contents. Format: {\"tool\": \"list_dir\", \"path\": \"directory_path\"}\n- read_file: Read file content. Format: {\"tool\": \"read_file\", \"path\": \"file_path\"}\n- write_file: Create/write file. Format: {\"tool\": \"write_file\", \"path\": \"file_path\", \"content\": \"file_content\"}\n- run_bash: Execute shell commands. Format: {\"tool\": \"run_bash\", \"command\": \"shell_command\"}\n- move_file: Move/rename files. Format: {\"tool\": \"move_file\", \"source\": \"old_path\", \"destination\": \"new_path\"}\n- mkdir: Create directories. Format: {\"tool\": \"mkdir\", \"path\": \"directory_path\"}\n- stat: Get file metadata. Format: {\"tool\": \"stat\", \"path\": \"file_or_directory_path\"}\n\n**KEY RULES:**\n1. Most questions are conversations - answer directly\n2. Only use tools when actually working with files/directories\n3. Use relative paths when possible: \"script.py\", not \"/full/path\"\n4. When you need to use a tool, respond with ONLY the JSON - no other text\n5. After the tool executes, then explain what you did\n\n\n**Current Configuration**:\n\n    SANDBOX_PATH: /Users/admin/Documents\n    LOCAL_MODEL_PATH: /Users/admin/.cache/lm-studio/models/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q8_0.gguf\n    DEFAULT_PROVIDER: local\n    AVAILABLE_PROVIDERS: local, deepseek\n    "
   }
 ]

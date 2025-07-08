@@ -22,23 +22,27 @@ from rich.markdown import Markdown
 from rich.text import Text
 from utils.silly_messages import get_silly_message
 
-from config import config
+from config_module import config
 from models.session import CommandContext
 from models.router import CommandProcessor, CommandHandler
 from services.llm_handler import (
     SecurityMiddleware, 
     FilesystemCommandHandler,
-    AutoImplementHandler,
-    LocalCodingHandler  # Legacy - deprecated in favor of LocalOpenAIHandler
+    AutoImplementHandler
 )
-# Import new OpenAI-compatible handlers
+
+# Import unified OpenAI-compatible handlers and GGUF handler
 try:
     from services.unified_openai_handler import LocalOpenAIHandler, CloudOpenAIHandler
+    from services.gguf_handler import GGUFLocalHandler
     OPENAI_HANDLERS_AVAILABLE = True
+    GGUF_HANDLER_AVAILABLE = True
     OPENAI_IMPORT_ERROR = None
 except ImportError as e:
     OPENAI_HANDLERS_AVAILABLE = False
+    GGUF_HANDLER_AVAILABLE = False
     OPENAI_IMPORT_ERROR = str(e)
+
 from services.mcpserver import start_mcp_server
 from services.mcpclient import MCPClient
 
@@ -110,38 +114,59 @@ def main():
     processor.add_middleware(SecurityMiddleware(ctx))
     processor.add_handler(FilesystemCommandHandler(ctx))
     
-    # Display OpenAI import warning if needed
-    if not OPENAI_HANDLERS_AVAILABLE and OPENAI_IMPORT_ERROR:
-        console.print(f"[yellow]Warning:[/] OpenAI handlers not available: {OPENAI_IMPORT_ERROR}")
-        console.print("[yellow]Falling back to legacy handlers. Run: pip install openai>=1.0.0[/]")
-        console.print()
+    # MIGRATION COMPLETED: Unified Architecture Only
+    if not OPENAI_HANDLERS_AVAILABLE:
+        console.print(f"[red]Error:[/] OpenAI handlers not available: {OPENAI_IMPORT_ERROR}")
+        console.print("[red]DeepCoderX requires OpenAI client. Run: pip install openai>=1.0.0[/]")
+        console.print("[red]Legacy handlers have been removed in this version.[/]")
+        return
+        
+    if not GGUF_HANDLER_AVAILABLE:
+        console.print("[yellow]Warning:[/] GGUF handler not available. GGUF models may not work properly.")
     
-    # MIGRATION PHASE 1: Prioritize Unified Handlers
-    if OPENAI_HANDLERS_AVAILABLE:
-        try:
-            # Primary: Use unified OpenAI-compatible handlers
-            processor.add_handler(CloudOpenAIHandler(ctx, "deepseek"))
-            processor.add_handler(LocalOpenAIHandler(ctx))
-            processor.add_handler(AutoImplementHandler(ctx))
+    try:
+        # UNIFIED ARCHITECTURE: All AI interactions use unified handlers
+        # Register all available provider handlers based on model_type
+        enabled_providers = [name for name, cfg in config.PROVIDERS.items() if cfg['enabled']]
+        
+        for provider_name in enabled_providers:
+            provider_config = config.PROVIDERS[provider_name]
+            model_type = provider_config.get('model_type', 'openai')
             
-            # Legacy handler as last resort fallback only
-            # Note: LocalCodingHandler is deprecated in favor of LocalOpenAIHandler
-            processor.add_handler(LocalCodingHandler(ctx))
-            
-            if ctx.debug_mode:
-                console.print("[bold green]✓ Unified Architecture Handlers Active[/]")
-                console.print(f"[green]✓ Available providers: {', '.join(config.PROVIDERS.keys())}[/]")
-                console.print("[dim]Note: Legacy LocalCodingHandler available as fallback[/]")
-                
-        except Exception as e:
-            console.print(f"[yellow]Warning:[/] Unified handlers failed, using legacy: {e}")
-            # Fallback to legacy handlers
-            processor.add_handler(AutoImplementHandler(ctx))
-            processor.add_handler(LocalCodingHandler(ctx))
-    else:
-        # Use legacy handlers only
+            if model_type == 'gguf':
+                # Use GGUF handler for GGUF models
+                if GGUF_HANDLER_AVAILABLE:
+                    processor.add_handler(GGUFLocalHandler(ctx, provider_name))
+                    if ctx.debug_mode:
+                        console.print(f"[bold blue]✅ Registered GGUF handler for {provider_name}[/]")
+                else:
+                    console.print(f"[red]Error:[/] GGUF handler not available for {provider_name}")
+            elif model_type in ['openai', 'openai_local']:
+                # Use OpenAI-compatible handlers
+                if provider_name in ['deepseek', 'openai']:
+                    processor.add_handler(CloudOpenAIHandler(ctx, provider_name))
+                    if ctx.debug_mode:
+                        console.print(f"[bold green]✅ Registered cloud handler for {provider_name}[/]")
+                else:
+                    processor.add_handler(LocalOpenAIHandler(ctx))
+                    if ctx.debug_mode:
+                        console.print(f"[bold cyan]✅ Registered local OpenAI handler for {provider_name}[/]")
+            else:
+                console.print(f"[yellow]Warning:[/] Unknown model_type '{model_type}' for provider '{provider_name}'")
+        
+        # Add AutoImplementHandler for code implementation
         processor.add_handler(AutoImplementHandler(ctx))
-        processor.add_handler(LocalCodingHandler(ctx))
+        
+        if ctx.debug_mode:
+            console.print("[bold green]✅ MIGRATION COMPLETED: Unified Architecture + GGUF Support Active[/]")
+            console.print(f"[green]✅ Enabled providers: {', '.join(enabled_providers)}[/]")
+            console.print(f"[green]✅ Default provider: {config.DEFAULT_PROVIDER}[/]")
+            console.print("[dim]All legacy handlers migrated + GGUF tool calling implemented[/]")
+            
+    except Exception as e:
+        console.print(f"[red]Fatal Error:[/] Failed to initialize unified handlers: {e}")
+        console.print("[red]Please check your configuration and try again.[/]")
+        return
 
     # Add a fallback handler for unknown commands
     class NotFoundHandler(CommandHandler):
@@ -152,7 +177,6 @@ def main():
     processor.add_handler(NotFoundHandler(ctx))
 
     # Display the startup logo
-   
     logo = Text(r"""
 
 #  ██████╗ ███████╗███████╗██████╗  ██████╗ ██████╗ ██████╗ ███████╗██████╗ ██╗  ██╗
@@ -166,31 +190,27 @@ def main():
     console.print(Panel(logo, border_style="#9c9a9a"))
     
     # Create status message with provider info and migration status
-    status_parts = [f"[bold]DeepCoderX[/] | [green]Project:[/] {project_dir.name}"]
-    
-    if OPENAI_HANDLERS_AVAILABLE:
-        enabled_providers = [name for name, cfg in config.PROVIDERS.items() if cfg['enabled']]
-        if enabled_providers:
-            status_parts.append(f"[blue]Providers:[/] {', '.join(enabled_providers)}")
-        status_parts.append(f"[yellow]Default:[/] {config.DEFAULT_PROVIDER}")
-        status_parts.append("[green]Architecture:[/] Unified")
-    else:
-        status_parts.append("[yellow]Architecture:[/] Legacy")
+    enabled_providers = [name for name, cfg in config.PROVIDERS.items() if cfg['enabled']]
+    status_parts = [
+        f"[bold]DeepCoderX[/] | [green]Project:[/] {project_dir.name}",
+        f"[blue]Providers:[/] {', '.join(enabled_providers)}",
+        f"[yellow]Default:[/] {config.DEFAULT_PROVIDER}",
+        "[green]Architecture:[/] Unified ✅"
+    ]
     
     console.print(Panel(
         " | ".join(status_parts),
         border_style="#9c9a9a"
     ))
     
-    # Migration status notification
-    if OPENAI_HANDLERS_AVAILABLE:
-        console.print("[bold green]🎉 Running with Unified Architecture![/]")
-        console.print("[dim]• Tool Registry Pattern active")
-        console.print("[dim]• Standardized error handling")
-        console.print("[dim]• Consistent tool calling across all models[/]")
-    else:
-        console.print("[bold yellow]⚠️  Running with Legacy Handlers[/]")
-        console.print("[dim]Consider upgrading: pip install openai>=1.0.0[/]")
+    # Migration completed notification
+    console.print("[bold green]🎉 LEGACY MIGRATION + GGUF TOOL CALLING COMPLETED![/]")
+    console.print("[dim]• All handlers use unified OpenAI architecture")
+    console.print("[dim]• Tool Registry Pattern active")
+    console.print("[dim]• Standardized error handling")
+    console.print("[dim]• GGUF models support tool calling via manual prompting")
+    console.print("[dim]• OpenAI-compatible models use native tool calling")
+    console.print("[dim]• Complete OpenAPI 3.1 MCP File System support[/]")
     
     console.print("[dim]Type 'exit' or 'quit' to end the session.[/]")
 
@@ -221,6 +241,12 @@ def main():
                     if hasattr(handler, 'provider_name') and handler.provider_name == provider_name:
                         handler.clear_history()
                         console.print(f"[green]{provider_name.title()} conversation history cleared.[/]")
+                        cleared = True
+                        break
+                    # Also check for GGUF handlers that may use context_manager
+                    elif hasattr(handler, 'context_manager') and hasattr(handler, 'provider_name') and handler.provider_name == provider_name:
+                        handler.clear_history()
+                        console.print(f"[green]{provider_name.title()} GGUF conversation history cleared.[/]")
                         cleared = True
                         break
                 if not cleared:

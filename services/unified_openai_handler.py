@@ -444,7 +444,7 @@ class LocalOpenAIHandler(UnifiedOpenAIHandler):
         return not is_analysis or self.ctx.user_input.lower().startswith("@qwen")
     
     def _conversation_loop(self):
-        """Override to use legacy tool calling for local models."""
+        """Override to use legacy JSON tool calling for local models."""
         max_tool_calls = config.MAX_TOOL_CALLS
         recent_tool_calls = []
         
@@ -462,10 +462,23 @@ class LocalOpenAIHandler(UnifiedOpenAIHandler):
             self.ctx.status_message = f"Thinking with {self.provider_config['name']}..."
             
             try:
-                response = self._create_chat_completion()
+                # Create chat completion WITHOUT tools for local models
+                completion_params = {
+                    "model": self.provider_config["model"],
+                    "messages": self.message_history,
+                    "temperature": self.provider_config.get("temperature", 0.1),
+                    "max_tokens": self.provider_config.get("max_tokens", 2048)
+                }
+                
+                response = self.client.chat.completions.create(**completion_params)
+                
+                # Log usage if available
+                if hasattr(response, 'usage') and response.usage:
+                    log_api_usage(self.provider_name, response.usage.total_tokens)
+                
                 model_response_text = response.choices[0].message.content or ""
                 
-                # Use legacy tool calling for local models
+                # Use legacy JSON tool calling for local models
                 if self._handle_legacy_tool_calls(model_response_text):
                     # Check for loop detection
                     tool_call_match = re.search(r'\{.*?\}', model_response_text, re.DOTALL)

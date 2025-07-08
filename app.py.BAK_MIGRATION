@@ -31,7 +31,7 @@ from services.llm_handler import (
     AutoImplementHandler,
     LocalCodingHandler  # Legacy - deprecated in favor of LocalOpenAIHandler
 )
-# Import new OpenAI-compatible handlers (preferred)
+# Import new OpenAI-compatible handlers
 try:
     from services.unified_openai_handler import LocalOpenAIHandler, CloudOpenAIHandler
     OPENAI_HANDLERS_AVAILABLE = True
@@ -79,7 +79,6 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--dry-run", action="store_true", help="Enable dry-run mode")
     parser.add_argument("--auto-confirm", action="store_true", help="Auto-confirm file modifications")
-    parser.add_argument("--use-legacy", action="store_true", help="Force use of legacy handlers (for debugging)")
     args = parser.parse_args()
     
     try:
@@ -111,40 +110,35 @@ def main():
     processor.add_middleware(SecurityMiddleware(ctx))
     processor.add_handler(FilesystemCommandHandler(ctx))
     
+    # Display OpenAI import warning if needed
+    if not OPENAI_HANDLERS_AVAILABLE and OPENAI_IMPORT_ERROR:
+        console.print(f"[yellow]Warning:[/] OpenAI handlers not available: {OPENAI_IMPORT_ERROR}")
+        console.print("[yellow]Falling back to legacy handlers. Run: pip install openai>=1.0.0[/]")
+        console.print()
+    
     # MIGRATION PHASE 1: Prioritize Unified Handlers
-    if OPENAI_HANDLERS_AVAILABLE and not args.use_legacy:
+    if OPENAI_HANDLERS_AVAILABLE:
         try:
             # Primary: Use unified OpenAI-compatible handlers
             processor.add_handler(CloudOpenAIHandler(ctx, "deepseek"))
             processor.add_handler(LocalOpenAIHandler(ctx))
             processor.add_handler(AutoImplementHandler(ctx))
             
-            # Show migration status
+            # Legacy handler as last resort fallback only
+            # Note: LocalCodingHandler is deprecated in favor of LocalOpenAIHandler
+            processor.add_handler(LocalCodingHandler(ctx))
+            
             if ctx.debug_mode:
-                console.print("[bold green]✓ Using Unified Architecture Handlers[/]")
+                console.print("[bold green]✓ Unified Architecture Handlers Active[/]")
                 console.print(f"[green]✓ Available providers: {', '.join(config.PROVIDERS.keys())}[/]")
-                console.print("[dim]Note: Legacy handlers available with --use-legacy flag[/]")
+                console.print("[dim]Note: Legacy LocalCodingHandler available as fallback[/]")
                 
         except Exception as e:
-            console.print(f"[yellow]Warning:[/] Unified handlers failed, falling back to legacy: {e}")
+            console.print(f"[yellow]Warning:[/] Unified handlers failed, using legacy: {e}")
             # Fallback to legacy handlers
             processor.add_handler(AutoImplementHandler(ctx))
             processor.add_handler(LocalCodingHandler(ctx))
-            console.print("[yellow]Using legacy handlers as fallback[/]")
-            
-    elif args.use_legacy:
-        # Force legacy handlers (for testing/debugging)
-        processor.add_handler(AutoImplementHandler(ctx))
-        processor.add_handler(LocalCodingHandler(ctx))
-        console.print("[yellow]Using legacy handlers (forced by --use-legacy flag)[/]")
-        
     else:
-        # OpenAI handlers not available
-        if not OPENAI_HANDLERS_AVAILABLE:
-            console.print(f"[yellow]Warning:[/] OpenAI handlers not available: {OPENAI_IMPORT_ERROR}")
-            console.print("[yellow]Install OpenAI library: pip install openai>=1.0.0[/]")
-            console.print("[yellow]Using legacy handlers as fallback[/]")
-        
         # Use legacy handlers only
         processor.add_handler(AutoImplementHandler(ctx))
         processor.add_handler(LocalCodingHandler(ctx))
@@ -155,169 +149,139 @@ def main():
             return True
         def handle(self) -> None:
             self.ctx.response = f"[red]Error:[/] Command not found: {self.ctx.user_input}"
-    
     processor.add_handler(NotFoundHandler(ctx))
-    
-    # Application setup
-    console.print(Panel.fit("🚀 [bold cyan]DeepCoderX[/] - AI Coding Assistant", style="bold blue"))
-    console.print(f"[dim]Working directory: {project_dir}[/]")
-    
-    # Show provider status
-    if OPENAI_HANDLERS_AVAILABLE and not args.use_legacy:
-        enabled_providers = [name for name, provider in config.PROVIDERS.items() if provider.get("enabled", False)]
-        console.print(f"[green]Providers:[/] {', '.join(enabled_providers)}")
-        console.print("[green]Architecture:[/] Unified (OpenAI-compatible)")
-    else:
-        console.print("[yellow]Architecture:[/] Legacy handlers")
-    
-    console.print()
 
-    # Migration notification
-    if OPENAI_HANDLERS_AVAILABLE and not args.use_legacy:
+    # Display the startup logo
+   
+    logo = Text(r"""
+
+#  ██████╗ ███████╗███████╗██████╗  ██████╗ ██████╗ ██████╗ ███████╗██████╗ ██╗  ██╗
+#  ██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗╚██╗██╔╝
+#  ██║  ██║█████╗  █████╗  ██████╔╝██║     ██║   ██║██║  ██║█████╗  ██████╔╝ ╚███╔╝ 
+#  ██║  ██║██╔══╝  ██╔══╝  ██╔═══╝ ██║     ██║   ██║██║  ██║██╔══╝  ██╔══██╗ ██╔██╗ 
+#  ██████╔╝███████╗███████╗██║     ╚██████╗╚██████╔╝██████╔╝███████╗██║  ██║██╔╝ ██╗
+#  ╚═════╝ ╚══════╝╚══════╝╚═╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
+#                                                                                   
+            """, justify="center", style="bold magenta")
+    console.print(Panel(logo, border_style="#9c9a9a"))
+    
+    # Create status message with provider info and migration status
+    status_parts = [f"[bold]DeepCoderX[/] | [green]Project:[/] {project_dir.name}"]
+    
+    if OPENAI_HANDLERS_AVAILABLE:
+        enabled_providers = [name for name, cfg in config.PROVIDERS.items() if cfg['enabled']]
+        if enabled_providers:
+            status_parts.append(f"[blue]Providers:[/] {', '.join(enabled_providers)}")
+        status_parts.append(f"[yellow]Default:[/] {config.DEFAULT_PROVIDER}")
+        status_parts.append("[green]Architecture:[/] Unified")
+    else:
+        status_parts.append("[yellow]Architecture:[/] Legacy")
+    
+    console.print(Panel(
+        " | ".join(status_parts),
+        border_style="#9c9a9a"
+    ))
+    
+    # Migration status notification
+    if OPENAI_HANDLERS_AVAILABLE:
         console.print("[bold green]🎉 Running with Unified Architecture![/]")
         console.print("[dim]• Tool Registry Pattern active")
-        console.print("[dim]• Standardized error handling") 
+        console.print("[dim]• Standardized error handling")
         console.print("[dim]• Consistent tool calling across all models[/]")
     else:
         console.print("[bold yellow]⚠️  Running with Legacy Handlers[/]")
         console.print("[dim]Consider upgrading: pip install openai>=1.0.0[/]")
     
-    console.print()
-    console.print("Type 'help' for commands, 'clear' to clear history, or 'exit' to quit.")
-    console.print()
+    console.print("[dim]Type 'exit' or 'quit' to end the session.[/]")
 
     while True:
         try:
-            user_input = input(f"{project_dir.name}> ").strip()
-            
+            user_input = console.input("\n👤 [bold]You:[/] ").strip()
             if not user_input:
                 continue
-            elif user_input.lower() == 'exit':
-                break
-            elif user_input.lower() == 'help':
-                show_help()
+            if user_input.lower() in ('exit', 'quit'):
+                raise KeyboardInterrupt
+            if user_input.lower() == 'clear':
+                cleared_handlers = []
+                for handler in processor.handlers:
+                    if hasattr(handler, 'clear_history'):
+                        handler.clear_history()
+                        cleared_handlers.append(type(handler).__name__)
+                if cleared_handlers:
+                    console.print(f"[green]Conversation history cleared for: {', '.join(cleared_handlers)}[/]")
+                else:
+                    console.print("[yellow]No handlers with conversation history found.[/]")
                 continue
-            elif user_input.lower() == 'clear':
-                handle_clear_command(processor, ctx)
-                continue
-            elif user_input.lower() == 'status':
-                show_status(ctx)
-                continue
-            elif user_input.lower() == 'providers':
-                show_providers()
+            
+            # Handle provider-specific clear commands
+            if user_input.lower().startswith('@') and 'clear' in user_input.lower():
+                provider_name = user_input.lower().split()[0][1:]  # Remove @ and get provider name
+                cleared = False
+                for handler in processor.handlers:
+                    if hasattr(handler, 'provider_name') and handler.provider_name == provider_name:
+                        handler.clear_history()
+                        console.print(f"[green]{provider_name.title()} conversation history cleared.[/]")
+                        cleared = True
+                        break
+                if not cleared:
+                    console.print(f"[yellow]No {provider_name} handler found.[/]")
                 continue
 
-            ctx.user_input = user_input
-            
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
-                console=console
+                TextColumn("({task.elapsed:.2f}s)"),
+                console=console,
+                transient=True
             ) as progress:
-                task = progress.add_task("Processing...", total=None)
+                task_id = progress.add_task("", total=None)
                 
-                try:
-                    processor.process()
-                except KeyboardInterrupt:
-                    progress.update(task, description="[red]Cancelled by user[/]")
-                    console.print("\n[yellow]Operation cancelled.[/]")
-                    continue
-                finally:
-                    progress.stop()
+                # Run the AI execution in a separate thread
+                response = None
+                def ai_task():
+                    nonlocal response
+                    response = processor.execute(user_input)
+
+                ai_thread = threading.Thread(target=ai_task)
+                ai_thread.start()
+
+                # And run the silly message updater in another thread
+                stop_silly_updater = threading.Event()
+                def silly_updater():
+                    while not stop_silly_updater.is_set():
+                        color, message = get_silly_message()
+                        progress.update(task_id, description=f"[{color}]{message}[/]")
+                        time.sleep(7)
+                
+                silly_thread = threading.Thread(target=silly_updater, daemon=True)
+                silly_thread.start()
+
+                # Keep the main thread responsive for the timer
+                while ai_thread.is_alive():
+                    time.sleep(0.1)
+
+                stop_silly_updater.set()
+                ai_thread.join()
+                final_message = progress.tasks[task_id].description
+                progress.stop_task(task_id)
+                total_time = progress.tasks[task_id].elapsed
+                
+                console.print("\n🤖 [bold]Assistant:[/]")
+                console.print(f"{final_message} ({total_time:.2f}s)")
+                console.print(Panel(Markdown(response), title=f"🤖 {ctx.model_name}", border_style="#9c9a9a"))
+
+        except (KeyboardInterrupt, EOFError):
+            if 'ai_thread' in locals() and ai_thread.is_alive():
+                # Give the AI thread a moment to finish
+                ai_thread.join(timeout=1.0)
             
-            if ctx.response:
-                console.print(f"\n{ctx.response}\n")
-            
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Goodbye![/]")
+            # Save session histories on exit
+            for handler in processor.handlers:
+                if hasattr(handler, '_save_history'):
+                    handler._save_history()
+
+            console.print("\n[bold]Session ended[/]")
             break
-        except EOFError:
-            console.print("\n[yellow]Goodbye![/]")
-            break
-        except Exception as e:
-            console.print(f"[red]Unexpected error:[/] {e}")
-            if ctx.debug_mode:
-                import traceback
-                console.print(f"[red]Traceback:[/] {traceback.format_exc()}")
-
-def show_help():
-    """Show help information."""
-    help_text = """
-[bold cyan]DeepCoderX Commands:[/]
-
-[bold]Basic Commands:[/]
-• help - Show this help message
-• clear - Clear conversation history  
-• exit - Exit the application
-• status - Show current status and configuration
-• providers - Show available AI providers
-
-[bold]Model Commands:[/]
-• @deepseek [message] - Use DeepSeek for analysis
-• @qwen [message] - Use local model (default)
-
-[bold]File Operations:[/]
-• @filename.py - Include file content in your message
-• Use natural language for file operations
-
-[bold]Special Commands:[/]
-• --build-context - Build project context for analysis
-• --use-legacy - Force legacy handlers (debugging)
-
-[bold]Examples:[/]
-• "Read config.py and explain it"
-• "@deepseek analyze the architecture"
-• "Create a test script for the API"
-• "list files in the current directory"
-"""
-    console.print(Panel(help_text, title="Help", style="blue"))
-
-def handle_clear_command(processor, ctx):
-    """Handle the clear command for all handlers."""
-    for handler in processor.handlers:
-        if hasattr(handler, 'clear_history'):
-            handler.clear_history()
-    console.print("[green]✓ Conversation history cleared for all models[/]")
-
-def show_status(ctx):
-    """Show current application status."""
-    status_info = f"""
-[bold]System Status:[/]
-• Debug Mode: {'[green]Enabled[/]' if ctx.debug_mode else '[dim]Disabled[/]'}
-• Dry Run: {'[yellow]Enabled[/]' if ctx.dry_run else '[dim]Disabled[/]'}
-• Auto Confirm: {'[yellow]Enabled[/]' if ctx.auto_confirm else '[dim]Disabled[/]'}
-• Architecture: {'[green]Unified[/]' if OPENAI_HANDLERS_AVAILABLE else '[yellow]Legacy[/]'}
-
-[bold]Working Directory:[/]
-• Path: {ctx.root_path}
-• Sandbox: {ctx.sandbox_path}
-
-[bold]MCP Server:[/]
-• Host: {config.MCP_SERVER_HOST}
-• Port: {config.MCP_SERVER_PORT}
-"""
-    console.print(Panel(status_info, title="Status", style="blue"))
-
-def show_providers():
-    """Show available AI providers."""
-    if not OPENAI_HANDLERS_AVAILABLE:
-        console.print("[yellow]OpenAI handlers not available. Install with: pip install openai>=1.0.0[/]")
-        console.print("[yellow]Currently using legacy handlers only.[/]")
-        return
-    
-    provider_info = ["[bold]Available AI Providers:[/]\n"]
-    
-    for name, provider in config.PROVIDERS.items():
-        status = "[green]✓[/]" if provider.get("enabled", False) else "[red]✗[/]"
-        tools = "[green]Yes[/]" if provider.get("supports_tools", False) else "[dim]No[/]"
-        
-        provider_info.append(f"{status} [bold]{provider.get('name', name)}[/]")
-        provider_info.append(f"   Model: {provider.get('model', 'N/A')}")
-        provider_info.append(f"   Tools: {tools}")
-        provider_info.append(f"   Base URL: {provider.get('base_url', 'Default')}")
-        provider_info.append("")
-    
-    console.print(Panel("\n".join(provider_info), title="Providers", style="blue"))
 
 if __name__ == "__main__":
     main()

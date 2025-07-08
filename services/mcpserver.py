@@ -9,7 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
-from config import SANDBOX_PATH, MAX_FILE_SIZE, ALLOWED_EXTENSIONS, MCP_API_KEY
+from config_module import SANDBOX_PATH, MAX_FILE_SIZE, ALLOWED_EXTENSIONS, MCP_API_KEY
 from utils.logging import logger
 from utils.security import SecurityError  # Import custom exception
 

@@ -66,7 +66,7 @@ class ToolExecutor:
             return self._execute_mkdir(path_for_mcp, parents, exist_ok)
         else:
             return validation_error("tool", tool_name, "one of: read_file, write_file, list_dir, stat, move_file, mkdir, run_bash",
-                                  '{"tool": "read_file", "path": "config.py"}'))
+                                  '{"tool": "read_file", "path": "config.py"}')
 
     def _get_helpful_path_error(self, tool_name: str) -> str:
         """Generate helpful error message when path is missing."""
