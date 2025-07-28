@@ -1,0 +1,36 @@
+Instruction Prompt (for a coding agent)
+
+You are creating a coding agent that must support two distinct types of language models:
+
+1. **OpenAI API models** (e.g., GPT-3.5, GPT-4)
+2. **Local GGUF-based models** (e.g., LLaMA, Mistral, Qwen using llama.cpp)
+
+These models must be handled differently in all stages of interaction.
+
+Your responsibilities:
+
+- **Detection and Routing**:
+  - If `model_type == "openai"`: use the OpenAI HTTP API (`/v1/chat/completions`) with JSON request bodies, tool/function calling using OpenAI's native `tools` schema, and automatic output parsing.
+  - If `model_type == "gguf"`: use direct function calls to a local inference engine (like `llama-cpp-python`), handle tool calling manually via prompt parsing, and manage context/tokens explicitly.
+
+- **Prompt Construction**:
+  - For OpenAI: Use system/user/assistant messages in a chat-completion format.
+  - For GGUF: Use plain string prompts, with inline or few-shot instructions to simulate tool calling or chat memory.
+
+- **Tool Calling**:
+  - For OpenAI: Pass a structured `tools` array in the API call, and respond to `tool_calls[]` in the response.
+  - For GGUF: Embed tool-call examples in the prompt. Detect and parse tool triggers using pattern matching (e.g., `<tool_call>function(args)</tool_call>`), then route the call manually and insert the tool response into the next prompt turn.
+
+- **Tokenizer and Metadata Handling**:
+  - For OpenAI: Do not manage tokenization or context manually.
+  - For GGUF: Use the embedded tokenizer provided by the GGUF runtime and track context length and position tokens manually.
+
+- **Streaming and Sampling**:
+  - For OpenAI: Use server-sent events if `stream=True`.
+  - For GGUF: Use streaming via callback hooks or manual polling, and manage sampling strategies via model parameters.
+
+Always isolate backend-specific code behind an interface or adapter pattern so that the rest of the system remains backend-agnostic.
+
+In short:
+- OpenAI = high-level, cloud, JSON, automatic tool calling
+- GGUF = low-level, local, manual prompt engineering, explicit tool handling

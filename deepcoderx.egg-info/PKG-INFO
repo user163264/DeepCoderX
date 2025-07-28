@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: deepcoderx
+Version: 1.1.0
+Summary: An AI-powered coding assistant with a secure, sandboxed environment.
+Author-email: Your Name <you@example.com>
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown

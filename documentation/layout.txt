@@ -1,0 +1,138 @@
+## DeepCoderX - Intelligent Code Assistant with Secure Execution Environment
+
+
+# project structure;
+
+DeepCoderX/
+├── __main__.py          # Entry point
+├── app.py               # Main application logic
+├── config.py            # Configuration handling
+├── services/
+│   ├── mcpserver.py     # MCP server implementation
+│   ├── mcpclient.py     # MCP client implementation
+│   ├── llm_handler.py   # API handlers for LLMs
+│   └── context_builder.py # Code context building
+├── utils/
+│   ├── logging.py       # Logging utilities
+│   ├── code_utils.py    # Code highlighting, extraction, etc.
+│   └── execution.py     # Tool execution logic
+└── models/
+    ├── router.py        # Task routing logic
+    └── session.py       # Session management
+
+
+
+
+## 
+
+
+
+
+Core Concept:
+DeepCoderX is an advanced CLI-based coding assistant that combines AI-powered code generation with secure execution capabilities. It integrates local and cloud-based AI models (DeepSeek API and Ollama) with a robust filesystem sandbox (MCP Server) for safe code execution and project manipulation.
+
+Key Features:
+
+Multi-Model Intelligence:
+
+Seamlessly switches between local Ollama models and DeepSeek's cloud API
+
+Smart task router analyzes queries to determine optimal processing path
+
+Context-aware responses with code highlighting (Python/Go/Bash)
+
+Secure Execution Environment:
+
+Built-in MCP Server for sandboxed filesystem operations
+
+Safe tool execution with user confirmation prompts
+
+Path validation and API key authentication
+
+Operation logging with detailed audit trails
+
+Project Context Awareness:
+
+Automatic code context mapping
+
+Import relationship visualization
+
+Cross-file dependency analysis
+
+Priority-based file snippet extraction
+
+Productivity Enhancements:
+
+Session logging with Markdown export
+
+One-click code copying to clipboard
+
+Bash script generation and execution
+
+Session resumption capabilities
+
+Security Protocols:
+
+Sandboxed filesystem operations
+
+API key authentication
+
+Path traversal prevention
+
+Content size validation (1MB limits)
+
+Recursive delete confirmation
+
+Technical Components:
+
+SmartCoder Core (smart_coder.py)
+
+Interactive chat interface
+
+Model routing and API communication
+
+Code extraction and highlighting
+
+Tool execution coordinator
+
+MCP Server (mcpserver.py)
+
+Secure HTTP server for filesystem operations
+
+Sandboxed CRUD operations
+
+Comprehensive logging and validation
+
+Tool discovery endpoint
+
+Configuration (mcptools.json)
+
+Filesystem operation definitions
+
+Endpoint and security configuration
+
+Method parameter specifications
+
+Target Users:
+
+Developers needing AI-powered coding assistance
+
+Teams requiring safe code execution environments
+
+Technical leads managing codebase analysis
+
+Educators teaching programming concepts
+
+Unique Value Proposition:
+DeepCoderX bridges the gap between AI-powered code generation and secure execution by providing:
+
+Context-aware code assistance
+
+Safe in-tool execution capabilities
+
+Project-aware code analysis
+
+Comprehensive operation auditing
+
+This combination of intelligent code generation with enterprise-grade security makes it ideal for professional development workflows where both productivity and safety are critical requirements.
+

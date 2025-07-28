@@ -1,0 +1,223 @@
+# GGUF Custom Prompting Enforcement Configuration
+# This file contains all the prompting strategies for GGUF models that don't follow instructions well
+
+# ==================================================
+# SYSTEM INSTRUCTIONS CONFIGURATION
+# ==================================================
+
+system_instructions:
+  # Emergency override language for stubborn models
+  emergency_override:
+    enabled: true
+    prefix: "🚨🚨🚨 EMERGENCY OVERRIDE - FOLLOW THESE INSTRUCTIONS EXACTLY 🚨🚨🚨"
+    mode_declaration: "YOU ARE IN TOOL-ONLY MODE. YOU MUST NOT GENERATE ANY TEXT RESPONSES."
+    format_requirement: "YOU MUST ONLY RESPOND WITH TOOL CALLS IN THIS EXACT FORMAT:"
+    format_example: "<tool_call>function_name({\"parameter\": \"value\"})</tool_call>"
+  
+  # Visual emphasis settings
+  visual_emphasis:
+    use_emojis: true
+    use_caps: true
+    use_repetition: true
+    emphasis_symbols: ["🚨", "🔥", "✅", "🚫", "🎯"]
+  
+  # Banned responses - what the model should NEVER say
+  banned_responses:
+    enabled: true
+    title: "🚫🚫🚫 BANNED RESPONSES 🚫🚫🚫"
+    responses:
+      - "NEVER write: {\"response\": \"anything\"}"
+      - "NEVER write: \"The current directory is...\""
+      - "NEVER write: \"I can help...\""
+      - "NEVER write: ANY TEXT AT ALL"
+  
+  # Allowed response format
+  allowed_responses:
+    enabled: true
+    title: "✅✅✅ ONLY ALLOWED RESPONSE ✅✅✅"
+    example: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+
+# ==================================================
+# FEW-SHOT EXAMPLES CONFIGURATION  
+# ==================================================
+
+few_shot_examples:
+  # Core examples that demonstrate the tool calling pattern
+  enabled: true
+  title: "🔥🔥🔥 MANDATORY EXAMPLES - COPY EXACTLY 🔥🔥🔥"
+  
+  # Direct examples with no explanatory text
+  examples:
+    - user: "pwd"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    
+    - user: "what is the current directory"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    
+    - user: "What is the current directory?"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    
+    - user: "current directory"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    
+    - user: "ls"
+      assistant: "<tool_call>run_bash({\"command\": \"ls\"})</tool_call>"
+    
+    - user: "ls -la"
+      assistant: "<tool_call>run_bash({\"command\": \"ls -la\"})</tool_call>"
+    
+    - user: "git status"
+      assistant: "<tool_call>run_bash({\"command\": \"git status\"})</tool_call>"
+    
+    - user: "Create a file called hello.txt with content 'Hello World'"
+      assistant: "<tool_call>write_file({\"path\": \"hello.txt\", \"content\": \"Hello World\"})</tool_call>"
+    
+    - user: "create file test.txt"
+      assistant: "<tool_call>write_file({\"path\": \"test.txt\", \"content\": \"\"})</tool_call>"
+    
+    - user: "List the files in the current directory"
+      assistant: "<tool_call>list_dir({\"path\": \".\"})</tool_call>"
+    
+    - user: "Read the config.py file"
+      assistant: "<tool_call>read_file({\"path\": \"config.py\"})</tool_call>"
+    
+    - user: "Create a directory called test_folder"
+      assistant: "<tool_call>mkdir({\"path\": \"test_folder\"})</tool_call>"
+
+# ==================================================
+# SPECIAL CASE HANDLING
+# ==================================================
+
+special_cases:
+  # Directory queries get special treatment
+  directory_queries:
+    enabled: true
+    title: "🔥🔥🔥 CRITICAL: IF USER ASKS ABOUT DIRECTORY, YOU MUST RESPOND WITH: 🔥🔥🔥"
+    response: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    triggers:
+      - "directory"
+      - "pwd"
+      - "current dir"
+      - "where am i"
+      - "location"
+
+# ==================================================
+# PROMPT ASSEMBLY CONFIGURATION
+# ==================================================
+
+prompt_assembly:
+  # Order of prompt sections
+  section_order:
+    - "system_instructions"
+    - "tool_documentation" 
+    - "few_shot_examples"
+    - "conversation_history"
+    - "user_input"
+    - "final_reminder"
+  
+  # Section separators
+  section_separator: "\n\n"
+  
+  # Final reminder before user input
+  final_reminder:
+    enabled: true
+    text: "Assistant: 🚨🚨🚨 RESPOND WITH <tool_call> ONLY! NO JSON! NO TEXT! 🚨🚨🚨"
+
+# ==================================================
+# MODEL-SPECIFIC OVERRIDES
+# ==================================================
+
+model_overrides:
+  # Qwen2.5-Coder specific settings
+  "qwen2.5-coder":
+    temperature: 0.0  # Maximum instruction following
+    extra_emphasis: true
+    repeat_examples: 2  # Repeat key examples multiple times
+    
+  # CodeLlama specific settings  
+  "codellama":
+    temperature: 0.1
+    extra_emphasis: false
+    repeat_examples: 1
+    
+  # Default settings for unknown models
+  "default":
+    temperature: 0.0
+    extra_emphasis: true
+    repeat_examples: 1
+
+# ==================================================
+# POST-PROCESSING CONFIGURATION
+# ==================================================
+
+post_processing:
+  # Enable intelligent post-processing fallback
+  enabled: true
+  
+  # Intent patterns for converting natural language to tool calls
+  intent_patterns:
+    directory_queries:
+      patterns:
+        - "what is the current directory"
+        - "pwd"
+        - "current directory"
+        - "where am i"
+        - "what directory"
+      tool_call: "run_bash"
+      parameters:
+        command: "pwd"
+    
+    file_listing:
+      patterns:
+        - "list files"
+        - "ls"
+        - "show files"
+        - "directory contents"
+      tool_call: "list_dir"
+      parameters:
+        path: "."
+    
+    file_creation:
+      patterns:
+        - "create file"
+        - "make file" 
+        - "new file"
+      tool_call: "write_file"
+      # Parameters extracted from user input
+    
+    file_reading:
+      patterns:
+        - "read file"
+        - "show file"
+        - "cat"
+        - "view file"
+      tool_call: "read_file"
+      # Parameters extracted from user input
+    
+    git_commands:
+      patterns:
+        - "git status"
+        - "git log"
+        - "git diff"
+        - "git add"
+        - "git commit"
+      tool_call: "run_bash"
+      # Command extracted from user input
+
+# ==================================================
+# DEBUGGING AND MONITORING
+# ==================================================
+
+debugging:
+  # Enable debug output for prompting
+  enabled: true
+  
+  # Log prompt construction details
+  log_prompt_construction: true
+  
+  # Log post-processing decisions
+  log_post_processing: true
+  
+  # Save prompts to files for analysis
+  save_prompts_to_file: false
+  prompt_log_directory: "debug_logs/prompts"

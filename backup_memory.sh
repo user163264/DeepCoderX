@@ -1,0 +1,1 @@
+cp /Users/admin/Documents/DeepCoderX/claude/MEMORY_FOR_NEXT_CHAT.MD /Users/admin/Documents/DeepCoderX/claude/MEMORY_FOR_NEXT_CHAT.MD.BAK

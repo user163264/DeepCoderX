@@ -1,0 +1,39 @@
+# DeepCoderX Requirements - Python 3.9 Compatible
+
+# Core dependencies for startup - ESSENTIAL
+python-dotenv>=1.0.0
+rich>=13.0.0
+requests>=2.31.0
+openai>=1.0.0
+pyyaml>=6.0.0
+pygments>=2.17.0
+pyperclip>=1.8.0
+
+# For GGUF model support - ESSENTIAL
+llama-cpp-python>=0.2.0
+
+# macOS specific (for readline support) - ESSENTIAL
+gnureadline; sys_platform == 'darwin'
+
+# Security - NEEDED for security utils
+cryptography>=40.0.0
+
+# Git operations - NEEDED for git_handler.py
+gitpython>=3.1.0
+
+# File watching - MAY BE NEEDED
+watchdog>=3.0.0
+
+# JSON handling - NEEDED for MCP server (use older version)
+# Note: orjson might not be available for Python 3.9, using standard json instead
+
+# Testing dependencies - OPTIONAL
+pytest>=7.4.0
+pytest-mock>=3.11.0
+
+# Note: The following are commented out because they require Python 3.10+
+# If you upgrade to Python 3.10+, uncomment these:
+# aiohttp>=3.8.0
+# aiofiles>=23.0.0
+# structlog>=23.0.0
+# colorlog>=6.7.0

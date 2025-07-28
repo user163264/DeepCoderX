@@ -1,0 +1,166 @@
+# GGUF Context-Aware Prompting Configuration
+# Optimized for different request types to reduce prompt overhead
+
+# ==================================================
+# PROMPT VARIANTS BY CONTEXT
+# ==================================================
+
+prompt_variants:
+  # Minimal prompt for creative/conversational tasks
+  creative:
+    system_prompt: "You are a helpful creative assistant. Respond naturally and engagingly."
+    tools_enabled: false
+    max_length: 150
+    
+  conversational:
+    system_prompt: "You are a helpful assistant. Provide clear, informative responses."
+    tools_enabled: false
+    max_length: 200
+    
+  # Light coding tasks with basic tools
+  coding_light:
+    system_prompt: "You are a coding assistant. Use tools when needed for file operations."
+    tools_enabled: true
+    available_tools: ["read_file", "write_file", "list_dir", "run_bash"]
+    examples_count: 3
+    max_length: 600
+    
+  # Full coding tasks with all tools
+  coding_full:
+    system_prompt: "You are a comprehensive coding assistant with full system access."
+    tools_enabled: true
+    available_tools: "all"
+    examples_count: 6
+    max_length: 1200
+
+# ==================================================
+# REQUEST CLASSIFICATION PATTERNS
+# ==================================================
+
+classification:
+  creative_patterns:
+    - "write"
+    - "poem"
+    - "story"
+    - "creative"
+    - "imagine"
+    - "compose"
+    
+  conversational_patterns:
+    - "hello"
+    - "hi"
+    - "what is"
+    - "explain"
+    - "how does"
+    - "why"
+    - "tell me about"
+    
+  coding_light_patterns:
+    - "create file"
+    - "read file"
+    - "list files"
+    - "show directory"
+    
+  coding_full_patterns:
+    - "debug"
+    - "analyze code"
+    - "git"
+    - "build"
+    - "deploy"
+    - "refactor"
+
+# ==================================================
+# STREAMLINED TOOL EXAMPLES
+# ==================================================
+
+tool_examples:
+  # Only essential examples, no redundancy
+  essential:
+    - user: "pwd"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+    
+    - user: "List files"
+      assistant: "<tool_call>list_dir({\"path\": \".\"})</tool_call>"
+    
+    - user: "Create file hello.txt"
+      assistant: "<tool_call>write_file({\"path\": \"hello.txt\", \"content\": \"\"})</tool_call>"
+    
+    - user: "Read config.py"
+      assistant: "<tool_call>read_file({\"path\": \"config.py\"})</tool_call>"
+
+# ==================================================
+# CLEAN SYSTEM INSTRUCTIONS
+# ==================================================
+
+system_instructions:
+  tool_format:
+    description: "Use tools when appropriate with this format:"
+    format: "<tool_call>function_name({\"parameter\": \"value\"})</tool_call>"
+    
+  conversation_mode:
+    description: "For non-coding tasks, respond naturally without tools."
+
+# ==================================================
+# PROGRESSIVE LOADING RULES
+# ==================================================
+
+progressive_loading:
+  # Start minimal, escalate as needed
+  initial_context: "conversational"
+  
+  escalation_triggers:
+    tools_needed:
+      patterns: ["create", "read", "list", "pwd", "ls", "git"]
+      upgrade_to: "coding_light"
+      
+    complex_coding:
+      patterns: ["debug", "analyze", "refactor", "build"]
+      upgrade_to: "coding_full"
+
+# ==================================================
+# MODEL OPTIMIZATION
+# ==================================================
+
+model_settings:
+  default:
+    temperature: 0.1
+    repeat_penalty: 1.1
+    max_tokens: 2048
+    
+  llama_models:
+    temperature: 0.0
+    repeat_penalty: 1.15
+    stop_sequences: ["Human:", "User:", "</tool_call>\n\n"]
+    
+  qwen_models:
+    temperature: 0.0
+    repeat_penalty: 1.1
+    stop_sequences: ["<|im_end|>", "</tool_call>\n\n"]
+
+# ==================================================
+# INTELLIGENT POST-PROCESSING
+# ==================================================
+
+post_processing:
+  enabled: true
+  
+  # Simple pattern matching for common commands
+  command_shortcuts:
+    "pwd": 
+      tool: "run_bash"
+      params: {"command": "pwd"}
+    "ls":
+      tool: "list_dir" 
+      params: {"path": "."}
+    "ls -la":
+      tool: "run_bash"
+      params: {"command": "ls -la"}
+
+# ==================================================
+# DEBUG CONFIGURATION
+# ==================================================
+
+debug:
+  log_context_decisions: true
+  log_prompt_sizes: true
+  measure_overhead: true

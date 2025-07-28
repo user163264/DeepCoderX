@@ -1,0 +1,51 @@
+# Environment variables
+.env
+
+# Python virtual environment
+VENV/
+venv/
+
+# IDE and editor directories
+.vscode/
+.idea/
+
+# macOS files
+.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+
+# PyInstaller files
+build/
+dist/
+*.spec
+
+# Session files
+.deepcoderx/
+
+# Test cache
+.pytest_cache/
+
+# MODEL FILES - EXCLUDE FROM GITHUB (3.8GB total)
+.cache/deepcoderx/models/
+.cache/deepcoderx/models/*.gguf
+*.gguf
+
+# Large cache and temp directories
+.cache/deepcoderx/temp/
+.cache/deepcoderx/logs/
+logs/
+
+# Backup files (keep local only)
+*.BAK
+*.BAK*
+
+# Large documentation files
+*.rtf
+scratchpad.txt
+errors.txt
+
+# Virtual environments
+venv/
+VENV/

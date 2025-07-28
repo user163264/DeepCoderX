@@ -1,0 +1,950 @@
+"""
+Dual Model Handler for Phase 3: Multi-Agent Coordination
+
+This handler loads and manages both models simultaneously:
+- Llama 3.2-3B as semantic parser (always loaded)
+- Qwen2.5-Coder as code specialist (loaded on-demand)
+
+Total memory usage: ~5.1GB (well within 24GB limit)
+"""
+
+import json
+import re
+import time
+from typing import Dict, Any, List, Optional, Tuple
+from pathlib import Path
+
+# Direct llama-cpp-python import
+try:
+    from llama_cpp import Llama
+    LLAMA_CPP_AVAILABLE = True
+except ImportError:
+    LLAMA_CPP_AVAILABLE = False
+    raise ImportError("llama-cpp-python is required for dual model handling")
+
+from config_module import config, SEMANTIC_ZONES, ZONE_DETECTION_CONFIG, ZONE_ROUTING_RULES
+from config.direct_commands import (get_direct_commands, is_direct_command, 
+                                   get_direct_command_tool_call, get_command_info)
+from utils.logging import (console, log_api_usage, log_error, log_warning, log_info, log_debug, 
+                           log_model_loading, log_performance, log_routing_decision, dual_model_logger)
+from utils.model_logging import (log_model_prompt, log_model_response, log_semantic_analysis_attempt,
+                                log_tool_execution_details, log_conversation_context_details, log_model_error,
+                                log_model_performance)
+from models.session import CommandContext
+from models.router import CommandHandler
+from services.tool_executor import ToolExecutor
+from services.simplified_gguf_prompt import SimplifiedGGUFPromptBuilder
+from services.gguf_tool_parser import GGUFToolCallParser
+from services.gguf_context_manager import GGUFContextManager
+from services.gguf_response_postprocessor import GGUFResponsePostProcessor
+from services.tool_registry import tool_registry
+from services.gguf_handler import ChatTemplateFormatter
+
+
+class SemanticIntent:
+    """Data class for semantic analysis results with zone information."""
+    def __init__(self, intent_type: str, complexity: str, specialist_needed: str, confidence: float, zone: str = "unknown", zone_confidence: float = 0.0):
+        self.intent_type = intent_type
+        self.complexity = complexity
+        self.specialist_needed = specialist_needed
+        self.confidence = confidence
+        self.zone = zone
+        self.zone_confidence = zone_confidence
+        
+    def __repr__(self):
+        return f"SemanticIntent(type={self.intent_type}, complexity={self.complexity}, specialist={self.specialist_needed}, confidence={self.confidence:.2f}, zone={self.zone}, zone_conf={self.zone_confidence:.2f})"
+
+
+class LlamaSemanticParser:
+    """
+    Llama 3.2-3B based semantic parser for intent classification.
+    
+    Analyzes user input to determine:
+    - Intent type (conversation, file_operation, code_generation, complex_reasoning)
+    - Complexity level (simple, medium, complex)
+    - Specialist model needed (local_shortcuts, qwen_coder, cloud_api)
+    """
+    
+    def __init__(self, model_path: str, debug_mode: bool = False):
+        self.model_path = model_path
+        self.debug_mode = debug_mode
+        self._model = None
+        self.chat_formatter = ChatTemplateFormatter(model_path, "Llama-3.2-3B")
+        
+        # Optimized semantic analysis prompt - shorter for faster processing
+        self.semantic_system_prompt = """Classify quickly - JSON only:
+
+Examples:
+"hello" → {"intent_type": "conversation", "complexity": "simple", "specialist_needed": "local_shortcuts", "confidence": 0.9}
+"create script" → {"intent_type": "code_generation", "complexity": "medium", "specialist_needed": "qwen_coder", "confidence": 0.85}
+"explain X" → {"intent_type": "conversation", "complexity": "simple", "specialist_needed": "local_shortcuts", "confidence": 0.8}
+
+JSON:"""
+    
+    @property
+    def model(self) -> Llama:
+        """Lazy load the semantic parser model."""
+        if self._model is None:
+            if self.debug_mode:
+                log_info("DualModel", f"Loading Llama 3.2-3B semantic parser: {self.model_path}")
+            
+            # Optimized config for semantic parsing (fast inference)
+            semantic_config = {
+                "n_ctx": 2048,          # Smaller context for fast parsing
+                "n_batch": 256,         # Smaller batch for quick responses
+                "n_threads": 4,         # Fewer threads for semantic parser
+                "use_mmap": True,
+                "use_mlock": False,
+                "f16_kv": True,
+                "n_gpu_layers": -1,     # Use Metal acceleration
+                "verbose": False
+            }
+            
+            try:
+                import time
+                start_time = time.time()
+                self._model = Llama(model_path=str(self.model_path), **semantic_config)
+                load_duration = time.time() - start_time
+                log_model_loading("DualModel", "Llama 3.2-3B semantic parser", "~3.3GB", load_duration)
+            except Exception as e:
+                log_error("DualModel", f"Failed to load semantic parser from {self.model_path}", e)
+                raise
+        
+        return self._model
+    
+    def _detect_semantic_zone(self, user_input: str) -> Tuple[str, float]:
+        """
+        Detect semantic zone using explicit triggers and patterns.
+        
+        Args:
+            user_input: Raw user input to analyze
+            
+        Returns:
+            Tuple of (zone_name, confidence_score)
+        """
+        if not ZONE_DETECTION_CONFIG["enabled"]:
+            return "unknown", 0.0
+        
+        user_lower = user_input.lower().strip()
+        zone_scores = {}
+        
+        for zone_name, zone_config in SEMANTIC_ZONES.items():
+            score = 0.0
+            
+            # Check explicit triggers
+            trigger_weight = ZONE_DETECTION_CONFIG["trigger_weight"]
+            for trigger in zone_config["triggers"]:
+                if trigger.lower() in user_lower:
+                    score += trigger_weight
+                    if self.debug_mode:
+                        log_debug("SemanticZone", f"Trigger match '{trigger}' in zone '{zone_name}' (+{trigger_weight})")
+            
+            # Check pattern indicators  
+            pattern_weight = ZONE_DETECTION_CONFIG["pattern_weight"]
+            for pattern in zone_config["pattern_indicators"]:
+                try:
+                    if re.search(pattern, user_input, re.IGNORECASE if not ZONE_DETECTION_CONFIG["case_sensitive"] else 0):
+                        score += pattern_weight
+                        if self.debug_mode:
+                            log_debug("SemanticZone", f"Pattern match '{pattern}' in zone '{zone_name}' (+{pattern_weight})")
+                except re.error:
+                    # Skip invalid regex patterns
+                    if self.debug_mode:
+                        log_warning("SemanticZone", f"Invalid regex pattern: {pattern}")
+                    continue
+            
+            # Apply confidence boost from zone configuration
+            if score > 0:
+                score += zone_config["confidence_boost"]
+            
+            zone_scores[zone_name] = score
+        
+        # Determine winning zone
+        if not zone_scores or max(zone_scores.values()) < ZONE_DETECTION_CONFIG["confidence_threshold"]:
+            fallback_zone = ZONE_DETECTION_CONFIG["unknown_zone_fallback"]
+            if self.debug_mode:
+                log_debug("SemanticZone", f"No confident zone match, using fallback: {fallback_zone}")
+            return fallback_zone, 0.5
+        
+        # Get highest scoring zone
+        best_zone = max(zone_scores, key=zone_scores.get)
+        best_score = zone_scores[best_zone]
+        
+        if self.debug_mode:
+            log_info("SemanticZone", f"Detected zone: {best_zone} (confidence: {best_score:.2f})")
+            log_debug("SemanticZone", f"All scores: {zone_scores}")
+        
+        return best_zone, min(best_score, 1.0)  # Cap confidence at 1.0
+    
+    def parse_intent(self, user_input: str) -> SemanticIntent:
+        """
+        Parse user input to determine intent and routing with zone detection.
+        
+        Args:
+            user_input: Raw user input to analyze
+            
+        Returns:
+            SemanticIntent with classification results including zone information
+        """
+        # Step 1: Detect semantic zone first
+        detected_zone, zone_confidence = self._detect_semantic_zone(user_input)
+        
+        try:
+            # Format prompt for semantic analysis
+            prompt = self.chat_formatter.format_prompt(
+                system_prompt=self.semantic_system_prompt,
+                user_prompt=user_input
+            )
+            
+            if self.debug_mode:
+                log_debug("DualModel", f"Semantic analysis prompt: {len(prompt)} chars")
+            
+            # Generate semantic analysis (optimized for speed)
+            start_time = time.time()
+            response = self.model(
+                prompt,
+                max_tokens=80,          # Much shorter response - just JSON
+                temperature=0.0,        # Deterministic classification
+                top_p=0.9,
+                stop=["}", "}\\n", "Human:", "User:"],
+                echo=False
+            )
+            
+            duration = time.time() - start_time
+            
+            # Extract response text
+            if isinstance(response, dict) and "choices" in response:
+                response_text = response["choices"][0]["text"]
+            else:
+                response_text = str(response)
+            
+            if self.debug_mode:
+                log_performance("DualModel", "Semantic analysis", duration)
+                log_debug("DualModel", f"Raw semantic response: {response_text[:200]}")
+            
+            # Parse JSON response
+            try:
+                # Clean up response text to extract JSON
+                response_text = response_text.strip()
+                if not response_text.startswith('{'):
+                    # Find JSON in response
+                    start_idx = response_text.find('{')
+                    if start_idx != -1:
+                        response_text = response_text[start_idx:]
+                
+                # Ensure JSON is complete
+                if response_text.count('{') > response_text.count('}'):
+                    response_text += '}'
+                
+                semantic_data = json.loads(response_text)
+                
+                return SemanticIntent(
+                    intent_type=semantic_data.get("intent_type", "conversation"),
+                    complexity=semantic_data.get("complexity", "simple"),
+                    specialist_needed=semantic_data.get("specialist_needed", "local_shortcuts"),
+                    confidence=semantic_data.get("confidence", 0.5),
+                    zone=detected_zone,
+                    zone_confidence=zone_confidence
+                )
+                
+            except json.JSONDecodeError as e:
+                if self.debug_mode:
+                    log_warning("DualModel", f"JSON parse error: {e}, falling back to heuristics")
+                
+                # Fallback to heuristic classification
+                return self._heuristic_classification(user_input, detected_zone, zone_confidence)
+        
+        except Exception as e:
+            if self.debug_mode:
+                log_error("DualModel", f"Semantic parsing error, using fallback", e)
+            
+            # Fallback to simple heuristics
+            return self._heuristic_classification(user_input, detected_zone, zone_confidence)
+    
+    def _heuristic_classification(self, user_input: str, detected_zone: str = "unknown", zone_confidence: float = 0.0) -> SemanticIntent:
+        """Fallback heuristic classification if LLM parsing fails."""
+        user_lower = user_input.lower().strip()
+        
+        # Simple conversational patterns
+        if any(greeting in user_lower for greeting in ["hello", "hi", "hey", "how are you"]):
+            return SemanticIntent("conversation", "simple", "local_shortcuts", 0.8, detected_zone, zone_confidence)
+        
+        # Direct commands
+        if user_lower in ["pwd", "ls", "git status", "whoami"]:
+            return SemanticIntent("file_operation", "simple", "local_shortcuts", 0.9, detected_zone, zone_confidence)
+        
+        # Code creation keywords
+        if any(keyword in user_lower for keyword in ["create", "write", "generate", "build"]):
+            if any(code_word in user_lower for code_word in ["script", "function", "class", "code"]):
+                return SemanticIntent("code_generation", "medium", "qwen_coder", 0.7, detected_zone, zone_confidence)
+        
+        # Complex reasoning keywords
+        if any(keyword in user_lower for keyword in ["architecture", "design", "strategy", "analyze"]):
+            return SemanticIntent("complex_reasoning", "complex", "cloud_api", 0.6, detected_zone, zone_confidence)
+        
+        # Default classification
+        return SemanticIntent("conversation", "simple", "local_shortcuts", 0.5, detected_zone, zone_confidence)
+
+
+class DualModelHandler(CommandHandler):
+    """
+    Dual model handler for Phase 3 multi-agent coordination.
+    
+    Manages both models simultaneously:
+    - Llama 3.2-3B: Semantic parser (always loaded, ~3.3GB)
+    - Qwen2.5-Coder: Code specialist (loaded on-demand, ~1.8GB)
+    
+    Total memory usage: ~5.1GB (comfortable within 24GB limit)
+    """
+    
+    def __init__(self, context: CommandContext, provider_name: str = "dual"):
+        super().__init__(context)
+        self.provider_name = provider_name
+        self.debug_mode = context.debug_mode
+        
+        if not LLAMA_CPP_AVAILABLE:
+            raise ImportError("llama-cpp-python is required for dual model handling")
+        
+        # Model paths
+        self.semantic_parser_path = self._get_semantic_parser_path()
+        self.code_specialist_path = self._get_code_specialist_path()
+        
+        # Initialize models
+        self.semantic_parser = LlamaSemanticParser(
+            self.semantic_parser_path, 
+            self.debug_mode
+        )
+        self._code_specialist = None  # Lazy loaded
+        
+        # Supporting components
+        self.prompt_builder = SimplifiedGGUFPromptBuilder()
+        self.tool_parser = GGUFToolCallParser()
+        self.context_manager = GGUFContextManager(provider_name)
+        self.tool_executor = ToolExecutor(self.ctx)
+        self.post_processor = GGUFResponsePostProcessor()
+        
+        # Configuration
+        self.max_tool_iterations = 5
+        
+        # Initialize known tools
+        available_tools = self._get_available_tools()
+        tool_names = [tool["function"]["name"] for tool in available_tools]
+        self.tool_parser.set_known_tools(tool_names)
+        
+        if self.debug_mode:
+            log_info("DualModel", "Initialized dual model handler")
+            log_info("DualModel", f"Semantic parser: {self.semantic_parser_path.name}")
+            log_info("DualModel", f"Code specialist: {self.code_specialist_path.name}")
+            log_info("DualModel", "Expected memory usage: ~5.1GB total")
+            
+            # Log centralized direct command configuration
+            command_info = get_command_info()
+            log_info("DualModel", f"Direct commands: {command_info['total_commands']} commands loaded from centralized config")
+            log_debug("DualModel", f"Available: {', '.join(command_info['command_names'])}")
+            log_debug("DualModel", f"Performance: {command_info['performance']}")
+    
+    def _get_semantic_parser_path(self) -> Path:
+        """Get path to Llama 3.2-3B semantic parser model."""
+        cache_dir = Path(__file__).parent.parent / ".cache" / "deepcoderx" / "models"
+        
+        # Look for Llama 3.2-3B models
+        llama_candidates = [
+            "Llama-3.2-3B-Instruct-uncensored.Q4_K_S.gguf",
+            "llama-3.2-3b-instruct.gguf",
+            "Llama-3.2-3B-Instruct.gguf"
+        ]
+        
+        for candidate in llama_candidates:
+            model_path = cache_dir / candidate
+            if model_path.exists():
+                return model_path
+        
+        raise FileNotFoundError(f"Llama 3.2-3B semantic parser not found in {cache_dir}")
+    
+    def _get_code_specialist_path(self) -> Path:
+        """Get path to Qwen2.5-Coder specialist model."""
+        cache_dir = Path(__file__).parent.parent / ".cache" / "deepcoderx" / "models"
+        
+        # Look for Qwen models
+        qwen_candidates = [
+            "qwen2.5-coder-1.5b-instruct-q8_0.gguf",
+            "qwen2.5-coder-1.5b-instruct-q4_k_s.gguf",
+            "qwen2.5-coder-1.5b.gguf"
+        ]
+        
+        for candidate in qwen_candidates:
+            model_path = cache_dir / candidate
+            if model_path.exists():
+                return model_path
+        
+        raise FileNotFoundError(f"Qwen2.5-Coder specialist not found in {cache_dir}")
+    
+    @property
+    def code_specialist(self) -> Llama:
+        """Lazy load the code specialist model."""
+        if self._code_specialist is None:
+            if self.debug_mode:
+                log_info("DualModel", f"Loading Qwen2.5-Coder specialist: {self.code_specialist_path.name}")
+            
+            # Optimized config for code generation
+            specialist_config = {
+                "n_ctx": 4096,          # Full context for code tasks
+                "n_batch": 512,         # Larger batch for code generation
+                "n_threads": 6,         # More threads for complex generation
+                "use_mmap": True,
+                "use_mlock": False,
+                "f16_kv": True,
+                "n_gpu_layers": -1,     # Use Metal acceleration
+                "verbose": False
+            }
+            
+            try:
+                start_time = time.time()
+                self._code_specialist = Llama(
+                    model_path=str(self.code_specialist_path), 
+                    **specialist_config
+                )
+                load_duration = time.time() - start_time
+                log_model_loading("DualModel", "Qwen2.5-Coder specialist", "~1.8GB", load_duration)
+                if self.debug_mode:
+                    log_info("DualModel", "Total memory usage: ~5.1GB")
+            except Exception as e:
+                log_error("DualModel", f"Failed to load code specialist from {self.code_specialist_path}", e)
+                raise
+        
+        return self._code_specialist
+    
+    def _apply_zone_routing_rules(self, intent: SemanticIntent) -> str:
+        """
+        Apply zone-aware routing rules to determine final routing target.
+        
+        Args:
+            intent: SemanticIntent with zone information
+            
+        Returns:
+            Final routing target based on zone rules
+        """
+        detected_zone = intent.zone
+        
+        # If zone is unknown or zones are disabled, use original routing
+        if detected_zone == "unknown" or not ZONE_DETECTION_CONFIG["enabled"]:
+            return intent.specialist_needed
+        
+        # Check if zone has specific routing rules
+        if detected_zone not in ZONE_ROUTING_RULES:
+            if self.debug_mode:
+                log_warning("SemanticZone", f"No routing rules found for zone: {detected_zone}")
+            return intent.specialist_needed
+        
+        zone_rules = ZONE_ROUTING_RULES[detected_zone]
+        
+        # Apply force routing if enabled
+        if zone_rules.get("force_routing", False):
+            target = zone_rules["target"]
+            if self.debug_mode:
+                log_info("SemanticZone", f"Force routing zone '{detected_zone}' to '{target}'")
+            return target
+        
+        # Check confidence thresholds
+        minimum_confidence = zone_rules.get("minimum_confidence", 0.5)
+        
+        # Use zone confidence if override is enabled, otherwise use intent confidence
+        confidence_to_check = intent.zone_confidence if zone_rules.get("override_confidence", False) else intent.confidence
+        
+        if confidence_to_check >= minimum_confidence:
+            target = zone_rules["target"]
+            if self.debug_mode:
+                log_info("SemanticZone", f"Zone '{detected_zone}' confidence {confidence_to_check:.2f} ≥ {minimum_confidence}, routing to '{target}'")
+            return target
+        else:
+            if self.debug_mode:
+                log_debug("SemanticZone", f"Zone '{detected_zone}' confidence {confidence_to_check:.2f} < {minimum_confidence}, using original routing")
+            return intent.specialist_needed
+    
+    def can_handle(self) -> bool:
+        """Check if dual model handler should process this request."""
+        user_input = self.ctx.user_input.lower()
+        
+        # Handle explicit dual model requests
+        if user_input.startswith("@dual") or user_input.startswith("@semantic"):
+            return True
+        
+        # Handle if this is the default provider
+        if self.provider_name == config.DEFAULT_PROVIDER:
+            # Check for other provider specifications
+            for provider_name in config.PROVIDERS.keys():
+                if provider_name != self.provider_name and user_input.startswith(f"@{provider_name}"):
+                    return False
+            return True
+        
+        return False
+    
+    def handle(self) -> None:
+        """Main processing method with semantic parser coordination."""
+        if self.debug_mode:
+            log_info("DualModel", "🚀 Phase 3: Dual model processing")
+        
+        # PERFORMANCE OPTIMIZATION: Direct command bypass (eliminates 2-5s semantic analysis)
+        user_input = self.ctx.user_input.lower().strip()
+        
+        # Check if this is a direct command using centralized configuration
+        if is_direct_command(user_input):
+            if self.debug_mode:
+                log_info("DualModel", f"⚡ Direct command bypass: {user_input} (skipping semantic analysis)")
+            
+            # Execute direct shortcut - sub-100ms performance
+            start_time = time.time()
+            tool_call = get_direct_command_tool_call(user_input)
+            tool_call_str = f"<tool_call>{tool_call}</tool_call>"
+            
+            # Parse and execute immediately
+            tool_calls, _ = self.tool_parser.parse_and_execute_format(tool_call_str)
+            if tool_calls:
+                self._execute_tool_calls(tool_calls, tool_call_str)
+            
+            if self.debug_mode:
+                execution_time = time.time() - start_time
+                log_performance("DualModel", "Direct command execution", execution_time)
+            return
+        
+        # Step 1: Semantic analysis with zone detection (only for non-direct commands)
+        self.ctx.status_message = "Analyzing intent with semantic zones..."
+        semantic_intent = self.semantic_parser.parse_intent(self.ctx.user_input)
+        
+        if self.debug_mode:
+            log_routing_decision(
+                semantic_intent.intent_type, 
+                semantic_intent.specialist_needed, 
+                semantic_intent.confidence, 
+                self.ctx.user_input
+            )
+            log_info("SemanticZone", f"Zone: {semantic_intent.zone} (confidence: {semantic_intent.zone_confidence:.2f})")
+        
+        # Step 1.5: Apply zone-aware routing rules
+        final_routing_target = self._apply_zone_routing_rules(semantic_intent)
+        if final_routing_target != semantic_intent.specialist_needed:
+            if self.debug_mode:
+                log_info("SemanticZone", f"Zone override: {semantic_intent.specialist_needed} → {final_routing_target}")
+            semantic_intent.specialist_needed = final_routing_target
+        
+        # Add user message to context
+        self.context_manager.add_user_message(self.ctx.user_input)
+        
+        # Step 2: Route to appropriate specialist based on semantic analysis
+        if semantic_intent.specialist_needed == "local_shortcuts":
+            self._handle_local_shortcuts(semantic_intent)
+        elif semantic_intent.specialist_needed == "qwen_coder":
+            self._handle_code_specialist(semantic_intent)
+        elif semantic_intent.specialist_needed == "cloud_api":
+            self._handle_cloud_routing(semantic_intent)
+        else:
+            # Fallback to conversational response
+            self._handle_conversational(semantic_intent)
+        
+        # Save context after processing
+        self.context_manager.save_session()
+    
+    def _handle_local_shortcuts(self, intent: SemanticIntent) -> None:
+        """Handle simple commands with direct shortcuts."""
+        if self.debug_mode:
+            log_info("DualModel", "🚀 Routing to local shortcuts")
+        
+        user_input = self.ctx.user_input.lower().strip()
+        
+        # Check if this is a direct command using centralized configuration
+        if is_direct_command(user_input):
+            # Execute direct shortcut
+            tool_call = get_direct_command_tool_call(user_input)
+            tool_call_str = f"<tool_call>{tool_call}</tool_call>"
+            
+            if self.debug_mode:
+                log_debug("DualModel", f"Direct shortcut: {tool_call_str}")
+            
+            # Parse and execute
+            tool_calls, _ = self.tool_parser.parse_and_execute_format(tool_call_str)
+            if tool_calls:
+                self._execute_tool_calls(tool_calls, tool_call_str)
+            return
+        
+        # For other simple operations, use minimal prompting
+        self._conversation_loop_with_specialist(None, intent)
+    
+    def _handle_code_specialist(self, intent: SemanticIntent) -> None:
+        """Handle code generation with Qwen2.5-Coder specialist."""
+        if self.debug_mode:
+            log_info("DualModel", "🚀 Routing to Qwen2.5-Coder specialist")
+        
+        # Load code specialist model
+        specialist = self.code_specialist
+        self._conversation_loop_with_specialist(specialist, intent)
+    
+    def _handle_cloud_routing(self, intent: SemanticIntent) -> None:
+        """Handle complex reasoning by routing to cloud APIs."""
+        if self.debug_mode:
+            log_info("DualModel", "🚀 Routing to cloud API for complex reasoning")
+        
+        # For Phase 3 initial implementation, fallback to code specialist
+        # In future iterations, this would route to DeepSeek/OpenAI
+        self._handle_code_specialist(intent)
+    
+    def _handle_conversational(self, intent: SemanticIntent) -> None:
+        """Handle conversational inputs with simple responses."""
+        if self.debug_mode:
+            log_info("DualModel", "🚀 Generating conversational response")
+        
+        user_input_lower = self.ctx.user_input.lower().strip()
+        
+        # Hard-coded responses for common greetings (marked for identification)
+        greeting_responses = {
+            "hello": "[HARD CODED] Hello! I'm your coding assistant. How can I help you with your programming projects today?",
+            "hi": "[HARD CODED] Hi! I'm here to help with coding tasks. What would you like to work on?",
+            "hey": "[HARD CODED] Hey! Ready to tackle some coding challenges? What can I help you with?",
+            "how are you": "[HARD CODED] I'm doing well and ready to help with your coding needs! What project are you working on?",
+            "good morning": "[HARD CODED] Good morning! Let's get some coding done. What can I help you with today?",
+            "good afternoon": "[HARD CODED] Good afternoon! What coding challenges can I help you solve?",
+            "good evening": "[HARD CODED] Good evening! Ready for some late-night coding? How can I assist?"
+        }
+        
+        # Check for exact greeting matches first
+        if user_input_lower in greeting_responses:
+            self.ctx.response = greeting_responses[user_input_lower]
+            self.context_manager.add_assistant_message(self.ctx.response)
+            return
+        
+        # For other conversational inputs, use the model naturally
+        try:
+            # Use semantic parser for conversational responses (let it behave naturally)
+            conversational_prompt = f"You are a helpful coding assistant. Respond naturally and briefly to: {self.ctx.user_input}\n\nKeep your response friendly, helpful, and focused on coding assistance."
+            
+            response = self.semantic_parser.model(
+                conversational_prompt,
+                max_tokens=200,
+                temperature=0.7,  # Natural creativity for conversation
+                stop=["Human:", "User:", "\\n\\n"],
+                echo=False
+            )
+            
+            if isinstance(response, dict) and "choices" in response:
+                response_text = response["choices"][0]["text"]
+            else:
+                response_text = str(response)
+            
+            self.ctx.response = response_text.strip()
+            self.context_manager.add_assistant_message(self.ctx.response)
+            
+        except Exception as e:
+            if self.debug_mode:
+                log_error("DualModel", "Conversational response error", e)
+            
+            # Fallback response (marked as hard-coded)
+            self.ctx.response = "[HARD CODED] Hello! I'm your coding assistant. How can I help you today?"
+            self.context_manager.add_assistant_message(self.ctx.response)
+    
+    def _conversation_loop_with_specialist(self, specialist_model: Optional[Llama], intent: SemanticIntent) -> None:
+        """Run conversation loop with specified specialist model."""
+        iteration = 0
+        
+        while iteration < self.max_tool_iterations:
+            if self.debug_mode:
+                specialist_name = "Local shortcuts" if specialist_model is None else "Qwen2.5-Coder"
+                log_debug("DualModel", f"Iteration {iteration + 1}/{self.max_tool_iterations} with {specialist_name}")
+            
+            # Build prompt based on specialist
+            conversation_history = self.context_manager.get_conversation_history()
+            available_tools = self._get_available_tools()
+            
+            if specialist_model is None:
+                # Use simplified prompts for simple operations
+                prompt = self.prompt_builder.build_prompt(
+                    user_input=self.ctx.user_input if iteration == 0 else "",
+                    conversation_history=conversation_history,
+                    available_tools=available_tools
+                )
+                
+                # Use semantic parser for simple responses (no streaming needed)
+                response = self._generate_with_model(self.semantic_parser.model, prompt, stream=False)
+            else:
+                # Use code specialist for complex generation (enable streaming for better UX)
+                prompt = self._build_specialist_prompt(
+                    self.ctx.user_input if iteration == 0 else "",
+                    conversation_history,
+                    available_tools,
+                    intent
+                )
+                
+                # Enable streaming for code generation (can take 4-31 seconds)
+                stream_enabled = intent.complexity in ["medium", "complex"] or "create" in self.ctx.user_input.lower()
+                response = self._generate_with_model(specialist_model, prompt, stream=stream_enabled)
+            
+            if not response:
+                self.ctx.response = "[red]Error:[/] No response from specialist model"
+                return
+            
+            # Parse for tool calls
+            tool_calls, clean_response = self.tool_parser.parse_and_execute_format(response)
+            
+            if not tool_calls:
+                # No tools needed, final response
+                self.ctx.response = clean_response or response
+                self.context_manager.add_assistant_message(self.ctx.response)
+                break
+            
+            # Execute tools and continue
+            self._execute_tool_calls(tool_calls, response)
+            iteration += 1
+        
+        # Handle iteration limit
+        if iteration >= self.max_tool_iterations:
+            self.ctx.response = f"[yellow]Reached iteration limit. Last response: {clean_response or 'No response'}[/]"
+            self.context_manager.add_assistant_message(self.ctx.response)
+    
+    def _build_specialist_prompt(self, user_input: str, conversation_history: List[Dict[str, Any]], 
+                               available_tools: List[Dict[str, Any]], intent: SemanticIntent) -> str:
+        """Build specialized prompt for code generation tasks."""
+        
+        # Enhanced system prompt for code specialist
+        specialist_system = (
+            f"You are a specialized coding assistant. The semantic parser classified this request as:\n"
+            f"Intent: {intent.intent_type}\n"
+            f"Complexity: {intent.complexity}\n" 
+            f"Confidence: {intent.confidence:.2f}\n\n"
+            f"Focus on providing accurate, efficient code solutions. Use tools when needed for file operations.\n\n"
+            f"Available tools: {', '.join([tool['function']['name'] for tool in available_tools])}\n\n"
+            f"Tool format: <tool_call>function_name({{\"parameter\": \"value\"}})</tool_call>"
+        )
+        
+        # Build the prompt manually since SimplifiedGGUFPromptBuilder doesn't support system_override
+        prompt_parts = [specialist_system]
+        
+        # Add conversation history if available
+        if conversation_history:
+            prompt_parts.append("\nPrevious conversation:")
+            for msg in conversation_history[-3:]:  # Last 3 messages for context
+                if isinstance(msg, dict) and "content" in msg:
+                    role = msg.get("role", "user")
+                    content = msg["content"][:200]  # Truncate long messages
+                    prompt_parts.append(f"{role.title()}: {content}")
+        
+        # Add current user input
+        if user_input:
+            prompt_parts.append(f"\nUser: {user_input}")
+            prompt_parts.append("Assistant:")
+        
+        return "\n".join(prompt_parts)
+    
+    def _generate_with_model(self, model: Llama, prompt: str, stream: bool = False) -> str:
+        """Generate response with specified model, with optional streaming."""
+        try:
+            start_time = time.time()
+            
+            if stream:
+                # Streaming generation for better user experience
+                if self.debug_mode:
+                    console.print("\n🚀 Generating response...", end="", style="dim")
+                
+                response_stream = model(
+                    prompt,
+                    max_tokens=2048,
+                    temperature=0.0,
+                    top_p=0.95,
+                    top_k=40,
+                    repeat_penalty=1.15,
+                    stop=["Human:", "User:", "Assistant:", "\\n\\n", "</tool_call>\\n\\n"],
+                    echo=False,
+                    stream=True  # Enable streaming
+                )
+                
+                accumulated_text = ""
+                for chunk in response_stream:
+                    if isinstance(chunk, dict) and 'choices' in chunk:
+                        delta = chunk['choices'][0].get('text', '')
+                        if delta:
+                            accumulated_text += delta
+                            if self.debug_mode:
+                                console.print(delta, end="", style="green")
+                    
+                    # Check for stop conditions
+                    if any(stop_word in accumulated_text for stop_word in ['</tool_call>', 'Human:', 'User:']):
+                        break
+                
+                if self.debug_mode:
+                    console.print()  # New line after streaming
+                
+                response_text = accumulated_text
+            else:
+                # Non-streaming generation (faster for short responses)
+                response = model(
+                    prompt,
+                    max_tokens=2048,
+                    temperature=0.0,
+                    top_p=0.95,
+                    top_k=40,
+                    repeat_penalty=1.15,
+                    stop=["Human:", "User:", "Assistant:", "\\n\\n", "</tool_call>\\n\\n"],
+                    echo=False
+                )
+                
+                if isinstance(response, dict) and "choices" in response:
+                    response_text = response["choices"][0]["text"]
+                else:
+                    response_text = str(response)
+            
+            duration = time.time() - start_time
+            
+            if self.debug_mode:
+                log_performance("DualModel", "Model generation", duration)
+            
+            return response_text.strip()
+            
+        except Exception as e:
+            if self.debug_mode:
+                log_error("DualModel", "Model generation error", e)
+            raise
+    
+    def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]], original_response: str) -> None:
+        """Execute tool calls and update context."""
+        if self.debug_mode:
+            log_info("DualModel", f"Executing {len(tool_calls)} tool calls")
+        
+        # Add original response to context
+        self.context_manager.add_assistant_message(original_response)
+        
+        # Execute tools
+        tool_results = []
+        for tool_call in tool_calls:
+            try:
+                result = self.tool_executor.execute_tool(tool_call)
+                tool_results.append(result)
+                
+                if self.debug_mode:
+                    log_debug("DualModel", f"Tool executed: {tool_call.get('tool', 'unknown')} -> {str(result)[:100]}")
+            
+            except Exception as e:
+                error_result = f"Tool execution error: {str(e)}"
+                tool_results.append(error_result)
+                
+                if self.debug_mode:
+                    log_error("DualModel", f"Tool execution error for {tool_call.get('tool', 'unknown')}", e)
+        
+        # Add results to context
+        if tool_results:
+            combined_results = "\\n\\n".join([f"Tool result: {result}" for result in tool_results])
+            self.context_manager.add_tool_message(combined_results)
+            
+            # CRITICAL FIX: Set the tool results as the final response for the user
+            # For simple commands, the tool output should be the response
+            if len(tool_results) == 1:
+                # Single tool result - show directly
+                self.ctx.response = str(tool_results[0])
+            else:
+                # Multiple tool results - format nicely
+                formatted_results = []
+                for i, result in enumerate(tool_results, 1):
+                    formatted_results.append(f"Result {i}: {result}")
+                self.ctx.response = "\n".join(formatted_results)
+            
+            if self.debug_mode:
+                log_debug("DualModel", f"Set final response: {self.ctx.response[:100]}...")
+    
+    def _get_available_tools(self) -> List[Dict[str, Any]]:
+        """Get available tools for dual model handler."""
+        from services.tool_registry import ToolPermission
+        return tool_registry.get_openai_definitions(max_permissions=ToolPermission.SYSTEM_ACCESS)
+    
+    def clear_history(self) -> None:
+        """Clear conversation history."""
+        self.context_manager.clear_history()
+    
+    def get_context_summary(self) -> Dict[str, Any]:
+        """Get current context summary."""
+        return self.context_manager.get_context_summary()
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get information about loaded models."""
+        return {
+            "semantic_parser": {
+                "path": str(self.semantic_parser_path),
+                "name": "Llama-3.2-3B",
+                "role": "Intent classification and routing",
+                "memory_usage": "~3.3GB"
+            },
+            "code_specialist": {
+                "path": str(self.code_specialist_path),
+                "name": "Qwen2.5-Coder",
+                "role": "Code generation and file operations",
+                "memory_usage": "~1.8GB",
+                "loaded": self._code_specialist is not None
+            },
+            "total_memory": "~5.1GB",
+            "available_memory": "24GB",
+            "utilization": "~21%"
+        }
+    
+    def __del__(self):
+        """Cleanup model resources."""
+        try:
+            if hasattr(self, 'semantic_parser') and self.semantic_parser._model:
+                if self.debug_mode:
+                    log_debug("DualModel", "Cleaning up semantic parser")
+            
+            if self._code_specialist is not None:
+                if self.debug_mode:
+                    log_debug("DualModel", "Cleaning up code specialist")
+            
+        except:
+            pass  # Ignore cleanup errors
+
+
+# Convenience functions
+def create_dual_model_handler(context: CommandContext) -> DualModelHandler:
+    """Create a dual model handler instance."""
+    return DualModelHandler(context, "dual")
+
+
+def test_dual_model_system() -> Dict[str, Any]:
+    """Test dual model system functionality."""
+    from models.session import CommandContext
+    
+    # Test semantic parser
+    test_cases = [
+        "hello",
+        "pwd", 
+        "create a Python script for sorting files",
+        "design a microservices architecture"
+    ]
+    
+    results = {"test_cases": []}
+    
+    try:
+        # Create test context
+        test_ctx = CommandContext(
+            user_input="test",
+            root_path=Path.cwd(),
+            debug_mode=True
+        )
+        
+        handler = DualModelHandler(test_ctx, "dual")
+        
+        for test_input in test_cases:
+            try:
+                semantic_intent = handler.semantic_parser.parse_intent(test_input)
+                results["test_cases"].append({
+                    "input": test_input,
+                    "intent": semantic_intent.__dict__,
+                    "success": True
+                })
+            except Exception as e:
+                results["test_cases"].append({
+                    "input": test_input,
+                    "error": str(e),
+                    "success": False
+                })
+        
+        results["model_info"] = handler.get_model_info()
+        results["overall_success"] = True
+        
+    except Exception as e:
+        results["overall_error"] = str(e)
+        results["overall_success"] = False
+    
+    return results

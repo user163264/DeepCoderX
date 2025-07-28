@@ -1,0 +1,145 @@
+# SIMPLIFIED GGUF Configuration for Coding-Only Assistant
+# Optimized for coding tasks, file operations, and technical explanations
+
+# ==================================================
+# BINARY CLASSIFICATION SYSTEM
+# ==================================================
+
+request_types:
+  # Only two types needed for coding assistant
+  tool_required:
+    description: "File operations, shell commands, directory actions"
+    patterns:
+      - "pwd"
+      - "ls" 
+      - "cd"
+      - "create file"
+      - "read file"
+      - "list files"
+      - "show directory"
+      - "git"
+      - "python"
+      - "run"
+      - "execute"
+      - "build"
+      - "install"
+    # File extension indicators
+    file_extensions: [".py", ".js", ".txt", ".md", ".json", ".yaml", ".yml", ".html", ".css"]
+    # Path indicators
+    path_indicators: ["/", "\\", "./", "../"]
+    
+  explanation_required:
+    description: "Coding explanations, technical questions, help requests"
+    patterns:
+      - "explain"
+      - "what is"
+      - "what does"
+      - "how does"
+      - "why"
+      - "can you"
+      - "help me understand"
+      - "tell me about"
+      - "difference between"
+
+# ==================================================
+# MINIMAL PROMPT TEMPLATES
+# ==================================================
+
+prompt_templates:
+  # For file operations and commands
+  tool_focused:
+    system_prompt: |
+      You are a coding assistant with system access. Use tools for file operations.
+      
+      Tool format: <tool_call>function_name({"parameter": "value"})</tool_call>
+      
+      For shell commands: run_bash({"command": "command_here"})
+      For file operations: Use specific tools like read_file, write_file, list_dir
+      
+      Respond with tool calls only for operational tasks.
+    
+    examples:
+      - user: "pwd"
+        assistant: '<tool_call>run_bash({"command": "pwd"})</tool_call>'
+      - user: "ls"
+        assistant: '<tool_call>run_bash({"command": "ls"})</tool_call>'
+      - user: "create main.py"
+        assistant: '<tool_call>write_file({"path": "main.py", "content": "# Main script\n"})</tool_call>'
+      - user: "list files"
+        assistant: '<tool_call>list_dir({"path": "."})</tool_call>'
+    
+    max_length: 600  # Keep tool prompts under 600 chars
+  
+  # For explanations and coding help
+  explanation_focused:
+    system_prompt: |
+      You are a helpful coding assistant. Provide clear, concise explanations about programming concepts, debugging help, and technical guidance.
+      
+      Keep responses focused on coding and development topics.
+    
+    max_length: 200  # Keep explanation prompts minimal
+
+# ==================================================
+# FAST CLASSIFICATION RULES
+# ==================================================
+
+classification:
+  # Simple pattern matching - no complex semantic analysis needed
+  tool_triggers:
+    commands: ["pwd", "ls", "cd", "mkdir", "rm", "cp", "mv", "git", "python", "node", "npm"]
+    file_actions: ["create", "read", "write", "delete", "move", "copy", "show", "list"]
+    combined_patterns: ["create file", "read file", "list files", "show directory", "current directory"]
+  
+  explanation_triggers:
+    question_words: ["what", "how", "why", "when", "which", "where"]
+    help_words: ["explain", "help", "tell", "show", "describe", "difference", "compare"]
+    
+  # Fast routing logic: if any tool trigger found -> use tools, else -> explanation
+
+# ==================================================
+# STREAMLINED TOOL DOCUMENTATION
+# ==================================================
+
+essential_tools:
+  # Only document the most commonly used tools
+  core_tools:
+    - name: "run_bash"
+      usage: "Shell commands: run_bash({\"command\": \"your_command\"})"
+    - name: "read_file" 
+      usage: "Read files: read_file({\"path\": \"filename\"})"
+    - name: "write_file"
+      usage: "Create files: write_file({\"path\": \"filename\", \"content\": \"text\"})"
+    - name: "list_dir"
+      usage: "List directory: list_dir({\"path\": \".\"})"
+
+# ==================================================
+# POST-PROCESSING SHORTCUTS - REMOVED
+# ==================================================
+
+# NOTE: Command shortcuts moved to config/direct_commands.py
+# This eliminates configuration duplication and establishes 
+# single source of truth for direct command definitions.
+# 
+# All direct commands and aliases now managed in:
+# /Users/admin/Documents/DeepCoderX/config/direct_commands.py
+
+# ==================================================
+# MODEL SETTINGS
+# ==================================================
+
+model_config:
+  temperature: 0.0  # Deterministic for coding tasks
+  max_tokens: 1024  # Sufficient for code responses
+  stop_sequences: ["Human:", "User:", "</tool_call>\n\n"]
+  repeat_penalty: 1.15
+
+# ==================================================
+# DEBUGGING
+# ==================================================
+
+debug:
+  log_classification_decisions: true
+  log_prompt_sizes: true
+  target_prompt_sizes:
+    tool_focused: 600
+    explanation_focused: 200

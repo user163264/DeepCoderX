@@ -1,0 +1,177 @@
+# CONVERSATION-AWARE GGUF Prompting Configuration
+# Supports both natural conversation AND tool usage appropriately
+
+# Conversation vs Tool Mode Detection
+conversation_mode:
+  enabled: true
+  description: "Determines when to respond naturally vs when to use tools"
+  
+  # Natural conversation triggers - respond directly without tools
+  conversation_patterns:
+    greetings: ["hello", "hi", "hey", "good morning", "good afternoon", "good evening"]
+    questions: ["how are you", "what is", "what are", "tell me about", "explain", "describe"]
+    general_chat: ["who are you", "what can you do", "help me understand"]
+    
+  # Tool usage triggers - use tools for these
+  tool_patterns:
+    file_operations: ["create file", "read file", "write file", "delete file", "list files"]
+    directory_operations: ["pwd", "ls", "cd", "mkdir", "current directory", "list directory"]
+    command_execution: ["run", "execute", "bash", "command", "install", "pip"]
+    code_tasks: ["debug", "analyze code", "refactor", "review code"]
+
+# System instructions - conversation-aware
+system_instructions:
+  conversation_priority:
+    enabled: true
+    title: "🗣️ CONVERSATION-FIRST APPROACH 🗣️"
+    instructions:
+      - "For greetings (hello, hi, hey): Respond naturally and warmly"
+      - "For questions (what is, how, why): Give direct explanations"
+      - "For general chat: Be helpful and conversational"
+      - "For file/code tasks: Use appropriate tools"
+    examples:
+      - "hello → Hello! How can I help you with your coding project today?"
+      - "what is Python → Python is a programming language known for..."
+      - "create main.py → <tool_call>write_file({\"path\": \"main.py\", \"content\": \"\"})</tool_call>"
+
+  tool_mode:
+    enabled: true
+    title: "🔧 TOOL MODE - For File/Code Operations 🔧"
+    when_to_use: "Only when explicitly working with files, directories, or running commands"
+    format: "<tool_call>function_name({\"parameter\": \"value\"})</tool_call>"
+    examples:
+      - "pwd → <tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+      - "list files → <tool_call>list_dir({\"path\": \".\"})</tool_call>"
+      - "read config.py → <tool_call>read_file({\"path\": \"config.py\"})</tool_call>"
+
+# Smart few-shot examples - context-aware
+few_shot_examples:
+  enabled: true
+  title: "📚 CONTEXT-AWARE EXAMPLES 📚"
+  
+  conversation_examples:
+    - user: "hello"
+      assistant: "Hello! How can I help you with your coding project today?"
+      type: "natural_conversation"
+    - user: "how are you?"
+      assistant: "I'm doing well! Ready to help with any programming tasks you have."
+      type: "natural_conversation"
+    - user: "what is Python?"
+      assistant: "Python is a high-level programming language known for its readability and versatility. It's widely used for web development, data science, automation, and more."
+      type: "natural_conversation"
+  
+  tool_examples:
+    - user: "pwd"
+      assistant: "<tool_call>run_bash({\"command\": \"pwd\"})</tool_call>"
+      type: "tool_usage"
+    - user: "list files"
+      assistant: "<tool_call>list_dir({\"path\": \".\"})</tool_call>"
+      type: "tool_usage"
+    - user: "create main.py"
+      assistant: "<tool_call>write_file({\"path\": \"main.py\", \"content\": \"\"})</tool_call>"
+      type: "tool_usage"
+
+# Progressive intensity - MUCH less aggressive for conversations
+progressive_intensity:
+  enabled: true
+  conversation_escalation:
+    1: # Gentle reminder
+      strategy: "gentle"
+      reminder: "Remember: Respond naturally to conversations, use tools for file operations"
+    2: # Clarification
+      strategy: "clarify"
+      reminder: "For greetings/questions: Natural responses. For file/code tasks: Tool calls"
+    3: # Direct guidance
+      strategy: "direct"
+      reminder: "📍 Conversation = Natural response | File/Code task = Tool call"
+  
+  tool_escalation:
+    1: # Standard tool emphasis
+      strategy: "standard"
+      reminder: "Use appropriate tool for this file/code operation"
+      format_example: "<tool_call>function_name({\"param\": \"value\"})</tool_call>"
+    2: # Emphasized format
+      strategy: "emphasized"
+      reminder: "🔧 File/Code task detected - Use tool call format"
+      format_example: "<tool_call>function_name({\"param\": \"value\"})</tool_call>"
+    3: # Strong format requirement
+      strategy: "strong"
+      reminder: "⚡ Code operation requires tool call format"
+      format_example: "<tool_call>function_name({\"param\": \"value\"})</tool_call>"
+
+# Model-specific settings - balanced approach
+model_overrides:
+  "llama-3.2":
+    temperature: 0.1  # Slightly more creative for conversations
+    conversation_priority: true
+    natural_responses_enabled: true
+    tool_threshold: "explicit"  # Only use tools when explicitly needed
+  "llama":
+    temperature: 0.1
+    conversation_priority: true
+    natural_responses_enabled: true
+    tool_threshold: "explicit"
+  "qwen2.5-coder":
+    temperature: 0.0
+    conversation_priority: true  # Still prioritize conversation
+    coding_specialization: true
+    tool_threshold: "moderate"  # Moderate tool usage threshold
+  "default":
+    temperature: 0.1
+    conversation_priority: true
+    natural_responses_enabled: true
+
+# Intelligent post-processing
+post_processing:
+  enabled: true
+  conversation_preservation:
+    # Don't force tool calls for natural conversations
+    preserve_natural_responses: true
+    conversation_indicators: ["Hello", "Hi", "I'm", "Python is", "You can"]
+    
+  tool_call_validation:
+    # Only validate tool calls for actual tool tasks
+    validate_format: true
+    required_structure: "<tool_call>function({\"param\": \"value\"})</tool_call>"
+    
+  context_aware_recovery:
+    # Recover based on input type
+    conversation_recovery: "Provide a natural, helpful response"
+    tool_recovery: "Use proper tool call format: <tool_call>function({\"param\": \"value\"})</tool_call>"
+
+# Intent classification patterns
+intent_classification:
+  conversation_intents:
+    greeting: ["hello", "hi", "hey", "good morning", "good afternoon"]
+    question: ["what is", "what are", "how does", "why", "explain", "tell me"]
+    general: ["how are you", "who are you", "what can you do", "help"]
+    
+  tool_intents:
+    file_ops: ["create", "read", "write", "delete", "file", "open"]
+    directory: ["pwd", "ls", "list", "directory", "folder", "cd"]
+    command: ["run", "execute", "bash", "command", "install"]
+
+# Format enforcement - balanced
+format_enforcement:
+  conversation_mode:
+    allow_natural_language: true
+    encourage_helpfulness: true
+    maintain_context: true
+    
+  tool_mode:
+    enforce_structure: true
+    require_valid_json: true
+    validate_parameters: true
+
+# Context optimization
+context_optimization:
+  conversation_context: true
+  preserve_chat_history: true
+  balance_examples: true  # Mix of conversation and tool examples
+  adaptive_prompting: true  # Adapt based on input type
+
+# Debugging - less verbose
+debugging:
+  enabled: false  # Reduce noise
+  log_intent_classification: true
+  log_mode_selection: true

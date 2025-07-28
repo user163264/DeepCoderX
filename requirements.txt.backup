@@ -1,0 +1,90 @@
+# DeepCoderX Requirements
+
+requests>=2.31.0
+rich>=13.7.0
+pygments>=2.17.2
+pyperclip>=1.8.2
+python-dotenv>=1.0.1
+pyyaml>=6.0.1
+llama-cpp-python>=0.2.79
+openai>=1.0.0
+
+# Testing Dependencies
+pytest>=8.0.0
+pytest-mock>=3.12.0
+requests-mock>=1.9.3
+
+# macOS specific dependency
+gnureadline; sys_platform == 'darwin'
+
+
+# Core AI and ML libraries
+llama-cpp-python>=0.2.0
+openai>=1.0.0
+anthropic>=0.7.0
+
+# HTTP requests and API handling
+requests>=2.31.0
+httpx>=0.24.0
+aiohttp>=3.8.0
+
+# MCP (Managed Code Protocol) related
+mcp>=0.1.0
+
+# CLI and user interface
+click>=8.1.0
+rich>=13.0.0
+prompt-toolkit>=3.0.0
+
+# Configuration and environment
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# File handling and utilities
+pathlib2>=2.3.0
+watchdog>=3.0.0
+gitpython>=3.1.0
+
+# Testing framework
+pytest>=7.4.0
+pytest-mock>=3.11.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Code analysis and formatting
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# Security
+cryptography>=41.0.0
+keyring>=24.0.0
+
+# Async support
+asyncio>=3.4.3
+aiofiles>=23.0.0
+
+# JSON and data handling
+orjson>=3.9.0
+pyyaml>=6.0.0
+toml>=0.10.2
+
+# Logging and monitoring
+structlog>=23.0.0
+colorlog>=6.7.0
+
+# Development tools
+pre-commit>=3.4.0
+setuptools>=68.0.0
+wheel>=0.41.0
+
+# Optional: For enhanced local model support
+torch>=2.0.0
+transformers>=4.30.0
+accelerate>=0.21.0
+
+# Optional: For advanced code analysis
+tree-sitter>=0.20.0
+tree-sitter-python>=0.20.0

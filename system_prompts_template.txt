@@ -1,0 +1,53 @@
+qwen:
+  # Qwen (e.g., Qwen2.5-Coder-Instruct)
+  # This model uses OpenAI-like <|im_start|> / <|im_end|> tags to separate turns
+  # You MUST respect exact spacing/newlines, or you'll break the tokenizer alignment
+
+  system: |
+    <|im_start|>system
+    You are a concise, friendly, and highly skilled coding assistant.
+    Answer as clearly as possible.
+    <|im_end|>
+
+  user_prefix: "<|im_start|>user\n"
+  user_suffix: "<|im_end|>"
+
+  assistant_prefix: "<|im_start|>assistant\n"
+  assistant_suffix: "<|im_end|>"
+
+---
+
+deepseek:
+  # DeepSeek-Coder (e.g., deepseek-coder-1.3b or 6.7b)
+  # Very simple tag-based format. Just alternate <|user|> and <|assistant|>
+  # Works well with multi-turn chat. No system prompt needed or expected.
+
+  system: ""  # Optional — you could add one if the model supports it
+
+  user_prefix: "<|user|>\n"
+  user_suffix: ""     # No closing tag needed
+
+  assistant_prefix: "<|assistant|>\n"
+  assistant_suffix: "" # No closing tag needed
+
+---
+
+gemma:
+  # Gemma (e.g., Gemma 2B/7B Instruct)
+  # Google's newer format uses <start_of_turn>user + <end_of_turn> tokens
+  # Output is preceded by <start_of_turn>model (not 'assistant')
+
+  system: |
+    <start_of_turn>user
+    You are a helpful and calm assistant.
+    Provide step-by-step reasoning where appropriate.
+    <end_of_turn>
+    <start_of_turn>model
+    OK.
+    <end_of_turn>
+
+  user_prefix: "<start_of_turn>user\n"
+  user_suffix: "<end_of_turn>"
+
+  assistant_prefix: "<start_of_turn>model\n"
+  assistant_suffix: "<end_of_turn>"

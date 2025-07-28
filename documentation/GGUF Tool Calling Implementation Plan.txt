@@ -1,0 +1,577 @@
+# GGUF Tool Calling Implementation Plan
+
+**Project:** DeepCoderX  
+**Date:** July 6, 2025  
+**Priority:** Critical - Core Functionality Restoration  
+**Status:** Ready for Implementation
+
+---
+
+## Executive Summary
+
+This plan addresses the critical failure in GGUF model tool calling by implementing a specialized GGUF handler that uses manual prompt engineering and pattern matching, while maintaining the unified architecture achieved in the completed legacy migration.
+
+**Core Strategy:** Create GGUF-specific components that integrate seamlessly with the existing unified architecture, Tool Registry Pattern, and standardized error handling.
+
+---
+
+## 1. Current State Analysis
+
+### 1.1 What's Working ✅
+- **Unified Architecture:** Successfully migrated and functional
+- **Tool Registry Pattern:** All 7 OpenAPI 3.1 tools registered and working
+- **MCP Client/Server:** Complete file system operations support
+- **Cloud Models:** DeepSeek and OpenAI working with native tool calling
+- **Error Handling:** Standardized across all components
+
+### 1.2 What's Broken ❌
+- **GGUF Tool Calling:** Local models cannot execute any file system operations
+- **Local Handler Logic:** Incorrectly assumes OpenAI-style tool calling
+- **Model Type Detection:** No distinction between OpenAI-compatible and GGUF models
+
+### 1.3 Root Cause
+The `LocalOpenAIHandler` assumes GGUF models can:
+1. Process OpenAI tool schemas
+2. Return structured `tool_calls` in responses
+3. Handle automatic tool execution
+
+**This is fundamentally incorrect for GGUF models.**
+
+---
+
+## 2. Solution Architecture
+
+### 2.1 New Components Overview
+
+```
+services/
+├── gguf_handler.py           # New: GGUF-specific handler
+├── gguf_tool_prompt.py       # New: Prompt engineering for tools
+├── gguf_tool_parser.py       # New: Pattern matching for tool calls
+├── gguf_context_manager.py   # New: Manual context management
+└── unified_openai_handler.py # Modified: Remove GGUF handling
+```
+
+### 2.2 Integration Strategy
+
+**Maintain Unified Interface:** All handlers implement the same `CommandHandler` interface, ensuring seamless integration with the existing `CommandProcessor`.
+
+**Provider-Based Routing:** Extend the existing provider system to distinguish between:
+- **OpenAI-Compatible:** Use existing `CloudOpenAIHandler`
+- **GGUF Models:** Use new `GGUFLocalHandler`
+
+---
+
+## 3. Implementation Phases
+
+## Phase 1: Foundation Components (Days 1-2)
+
+### 3.1 Create GGUFToolPromptBuilder
+
+**File:** `services/gguf_tool_prompt.py`
+
+**Purpose:** Generate prompts with embedded tool calling examples
+
+**Key Features:**
+- Tool definition embedding in natural language
+- Few-shot learning examples for each tool
+- Context-aware prompt construction
+- Permission-based tool filtering
+
+**Core Methods:**
+```python
+class GGUFToolPromptBuilder:
+    def build_prompt(self, user_input: str, conversation_history: List, available_tools: List) -> str
+    def _embed_tool_definitions(self, tools: List) -> str
+    def _add_few_shot_examples(self) -> str
+    def _format_conversation_history(self, history: List) -> str
+```
+
+**Tool Call Format:**
+```
+<tool_call>function_name({"parameter": "value"})</tool_call>
+```
+
+### 3.2 Create GGUFToolCallParser
+
+**File:** `services/gguf_tool_parser.py`
+
+**Purpose:** Extract and parse tool calls from GGUF responses
+
+**Key Features:**
+- Regex pattern matching for tool calls
+- JSON argument parsing with error recovery
+- Multiple tool call detection
+- Malformed call handling
+
+**Core Methods:**
+```python
+class GGUFToolCallParser:
+    def parse_response(self, response: str) -> List[Dict]
+    def _extract_tool_calls(self, text: str) -> List[str]
+    def _parse_arguments(self, args_str: str) -> Dict
+    def _clean_response_text(self, response: str) -> str
+```
+
+### 3.3 Create GGUFContextManager
+
+**File:** `services/gguf_context_manager.py`
+
+**Purpose:** Manual conversation history and token management
+
+**Key Features:**
+- Conversation history tracking
+- Token counting and context window management
+- Context truncation strategies
+- Tool result integration
+
+**Core Methods:**
+```python
+class GGUFContextManager:
+    def add_user_message(self, message: str) -> None
+    def add_assistant_message(self, message: str) -> None
+    def add_tool_results(self, tool_calls: List, results: List) -> None
+    def get_conversation_history(self) -> List[Dict]
+    def truncate_context(self, max_tokens: int) -> None
+```
+
+## Phase 2: Core GGUF Handler (Days 3-4)
+
+### 3.4 Create GGUFLocalHandler
+
+**File:** `services/gguf_handler.py`
+
+**Purpose:** Main handler for GGUF models with manual tool calling
+
+**Integration Points:**
+- Inherits from existing `CommandHandler` base class
+- Uses existing `ToolExecutor` for file operations
+- Integrates with unified error handling
+- Maintains conversation history
+
+**Core Implementation:**
+```python
+class GGUFLocalHandler(CommandHandler):
+    def __init__(self, context: CommandContext):
+        super().__init__(context)
+        self.prompt_builder = GGUFToolPromptBuilder()
+        self.tool_parser = GGUFToolCallParser()
+        self.context_manager = GGUFContextManager()
+        self.tool_executor = ToolExecutor()
+        self.max_iterations = 5
+        
+    def can_handle(self) -> bool:
+        # Handle all inputs when GGUF is the active model
+        return self._is_gguf_model_active()
+        
+    def handle(self) -> None:
+        # Multi-turn conversation loop with tool calling
+        iteration = 0
+        
+        while iteration < self.max_iterations:
+            # Build prompt with embedded tools and history
+            prompt = self.prompt_builder.build_prompt(
+                user_input=self.ctx.user_input,
+                conversation_history=self.context_manager.get_conversation_history(),
+                available_tools=self._get_available_tools()
+            )
+            
+            # Generate response from GGUF model
+            response = self._generate_gguf_response(prompt)
+            
+            # Parse for tool calls
+            tool_calls = self.tool_parser.parse_response(response)
+            
+            if not tool_calls:
+                # No tools called, return final response
+                self.ctx.response = self._extract_clean_response(response)
+                break
+                
+            # Execute tools and prepare for next iteration
+            tool_results = self._execute_tool_calls(tool_calls)
+            
+            # Update context with tool results
+            self.context_manager.add_tool_results(tool_calls, tool_results)
+            iteration += 1
+            
+        if iteration >= self.max_iterations:
+            self.ctx.response = "Task completed after maximum tool calling iterations"
+```
+
+## Phase 3: Integration and Configuration (Day 5)
+
+### 3.5 Update Provider Configuration
+
+**File:** `config.py`
+
+**Changes:**
+```python
+PROVIDERS = {
+    "local": {
+        "name": "Local GGUF Model",
+        "model_type": "gguf",  # NEW: Distinguish GGUF from OpenAI
+        "base_url": "http://localhost:1234/v1",
+        "api_key": "lm-studio",
+        "model": os.getenv("LOCAL_MODEL", "qwen2.5-coder-1.5b-instruct"),
+        "enabled": os.getenv("LOCAL_ENABLED", "true").lower() == "true",
+        "supports_tools": True,  # NEW: GGUF handler supports tools
+        "tool_format": "manual",  # NEW: Manual vs native tool calling
+        "temperature": 0.1,
+        "max_tokens": 2048,
+        "max_tool_iterations": 5  # NEW: Tool calling limits
+    },
+    "lm_studio": {  # NEW: For actual OpenAI-compatible local setups
+        "name": "LM Studio OpenAI Compatible",
+        "model_type": "openai_local",
+        "base_url": "http://localhost:1234/v1",
+        "api_key": "lm-studio",
+        "model": "openai-compatible-model",
+        "enabled": False,
+        "supports_tools": True,
+        "tool_format": "native"
+    }
+}
+```
+
+### 3.6 Update Handler Routing
+
+**File:** `app.py`
+
+**Changes:**
+```python
+# Import new GGUF handler
+from services.gguf_handler import GGUFLocalHandler
+
+# Modified handler registration
+for provider_name in enabled_providers:
+    provider_config = config.PROVIDERS[provider_name]
+    
+    if provider_config['model_type'] == 'gguf':
+        # Use specialized GGUF handler
+        processor.add_handler(GGUFLocalHandler(ctx, provider_name))
+    elif provider_config['model_type'] in ['openai', 'openai_local']:
+        if provider_name in ['deepseek', 'openai']:
+            processor.add_handler(CloudOpenAIHandler(ctx, provider_name))
+        else:
+            processor.add_handler(LocalOpenAIHandler(ctx, provider_name))
+```
+
+## Phase 4: Testing and Validation (Days 6-7)
+
+### 3.7 Unit Tests
+
+**File:** `tests/test_gguf_components.py`
+
+**Test Coverage:**
+```python
+def test_gguf_tool_prompt_builder():
+    # Test prompt construction with tools
+    # Test few-shot example embedding
+    # Test conversation history integration
+
+def test_gguf_tool_call_parser():
+    # Test single tool call parsing
+    # Test multiple tool calls in one response
+    # Test malformed JSON handling
+    # Test response text cleaning
+
+def test_gguf_context_manager():
+    # Test conversation history tracking
+    # Test token counting and truncation
+    # Test tool result integration
+
+def test_gguf_handler_integration():
+    # Test complete tool calling flow
+    # Test multi-turn conversations
+    # Test iteration limits
+    # Test error recovery
+```
+
+### 3.8 Integration Tests
+
+**File:** `tests/test_gguf_integration.py`
+
+**Scenarios:**
+1. **Basic File Operations:**
+   ```
+   Input: "create a file called ttttttttt.txt"
+   Expected: File created successfully
+   ```
+
+2. **Multi-Step Operations:**
+   ```
+   Input: "create a directory called test_dir, then create a file inside it"
+   Expected: Directory and file created
+   ```
+
+3. **Complex Workflows:**
+   ```
+   Input: "list files, read config.py, then create a summary file"
+   Expected: Multiple tools executed in sequence
+   ```
+
+### 3.9 Manual Testing Protocol
+
+**Test Scenarios:**
+1. **Tool Call Recognition:** Verify GGUF model generates correct tool call format
+2. **Parser Accuracy:** Ensure tool calls are extracted correctly
+3. **Tool Execution:** Verify integration with existing ToolExecutor
+4. **Error Handling:** Test malformed tool calls and execution failures
+5. **Multi-Turn:** Test complex conversations requiring multiple tool calls
+
+---
+
+## 4. Detailed Implementation Specifications
+
+## 4.1 GGUF Tool Call Protocol
+
+### 4.1.1 Tool Call Format
+**Standard Pattern:** `<tool_call>function_name(json_arguments)</tool_call>`
+
+**Examples:**
+```xml
+<tool_call>write_file({"path": "test.txt", "content": "Hello World"})</tool_call>
+<tool_call>read_file({"path": "config.py"})</tool_call>
+<tool_call>list_dir({"path": "."})</tool_call>
+<tool_call>mkdir({"path": "new_directory"})</tool_call>
+<tool_call>move_file({"source": "old.txt", "destination": "new.txt"})</tool_call>
+<tool_call>stat({"path": "file.txt"})</tool_call>
+<tool_call>run_bash({"command": "ls -la"})</tool_call>
+```
+
+### 4.1.2 Prompt Template Structure
+```
+You are an AI assistant with access to file system tools. When you need to use a tool, format your response like this:
+
+<tool_call>function_name({"parameter": "value"})</tool_call>
+
+Available tools:
+- write_file(path, content): Creates or overwrites a file
+- read_file(path): Reads file content
+- list_dir(path): Lists directory contents
+- mkdir(path): Creates a directory
+- move_file(source, destination): Moves or renames files
+- stat(path): Gets file/directory information
+- run_bash(command): Executes shell commands
+
+Examples:
+User: Create a file called hello.txt with content "Hello World"
+Assistant: I'll create that file for you.
+<tool_call>write_file({"path": "hello.txt", "content": "Hello World"})</tool_call>
+File created successfully! The file hello.txt now contains "Hello World".
+
+User: List the files in the current directory
+Assistant: I'll list the current directory contents for you.
+<tool_call>list_dir({"path": "."})</tool_call>
+
+Current conversation:
+{conversation_history}
+
+User: {user_input}
+Assistant: 
+```
+
+### 4.1.3 Response Processing
+1. **Extract Tool Calls:** Use regex to find all `<tool_call>...</tool_call>` patterns
+2. **Parse Arguments:** Extract function name and JSON arguments
+3. **Execute Tools:** Call ToolExecutor with parsed arguments
+4. **Format Results:** Inject tool results back into conversation
+5. **Continue or Finish:** Determine if more iterations needed
+
+## 4.2 Error Handling Strategy
+
+### 4.2.1 Tool Call Parsing Errors
+```python
+class GGUFParsingError(Exception):
+    """Raised when tool call parsing fails"""
+    pass
+
+def handle_parsing_error(self, error: str, raw_response: str) -> str:
+    """Provide helpful feedback for parsing errors"""
+    return f"I attempted to use a tool but the format was incorrect. Let me try again: {error}"
+```
+
+### 4.2.2 Tool Execution Failures
+```python
+def handle_execution_error(self, tool_call: Dict, error: str) -> str:
+    """Handle tool execution failures gracefully"""
+    return f"Tool execution failed: {error}. Let me try a different approach."
+```
+
+### 4.2.3 Context Window Management
+```python
+def manage_context_window(self) -> None:
+    """Truncate context when approaching limits"""
+    if self.context_manager.get_token_count() > self.max_context_tokens:
+        self.context_manager.truncate_context(self.max_context_tokens * 0.8)
+```
+
+## 4.3 Performance Considerations
+
+### 4.3.1 Token Optimization
+- **Efficient Prompts:** Minimize token usage in tool examples
+- **Context Truncation:** Keep only recent relevant conversation
+- **Tool Filtering:** Only include available tools in prompts
+
+### 4.3.2 Response Time
+- **Parallel Execution:** Execute multiple tools concurrently when possible
+- **Caching:** Cache frequent tool call patterns
+- **Early Termination:** Stop iteration when task is complete
+
+### 4.3.3 Memory Management
+- **History Limits:** Prevent unlimited conversation growth
+- **Tool Result Cleanup:** Remove old tool results from context
+- **Model Unloading:** Properly manage GGUF model memory
+
+---
+
+## 5. Risk Mitigation
+
+## 5.1 Implementation Risks
+
+### 5.1.1 High Risk: Tool Call Format Inconsistency
+**Risk:** GGUF models may not consistently follow tool call format
+**Mitigation:** 
+- Extensive prompt engineering with multiple examples
+- Robust regex patterns with fallback parsing
+- Error recovery mechanisms
+
+### 5.1.2 Medium Risk: Performance Impact
+**Risk:** Multiple model calls may be slow
+**Mitigation:**
+- Iteration limits (max 5 per user input)
+- Efficient prompt construction
+- Tool execution optimization
+
+### 5.1.3 Low Risk: Configuration Complexity
+**Risk:** Users may misconfigure model types
+**Mitigation:**
+- Clear documentation
+- Validation in config loading
+- Helpful error messages
+
+## 5.2 Rollback Strategy
+
+### 5.2.1 Gradual Deployment
+1. **Feature Flag:** Add `GGUF_TOOL_CALLING_ENABLED` config option
+2. **Parallel Testing:** Run both old and new handlers for comparison
+3. **Incremental Rollout:** Enable for specific model types first
+
+### 5.2.2 Fallback Mechanisms
+```python
+def handle_with_fallback(self) -> None:
+    """Try GGUF handler, fall back to simple response if it fails"""
+    try:
+        self._handle_with_tools()
+    except Exception as e:
+        console.print(f"[yellow]Tool calling failed: {e}[/]")
+        self._handle_without_tools()
+```
+
+---
+
+## 6. Success Metrics
+
+## 6.1 Functional Metrics
+- **Tool Call Success Rate:** >95% for valid tool requests
+- **Parsing Accuracy:** >98% for well-formed tool calls  
+- **Multi-Turn Success:** >90% for complex workflows
+- **Integration Success:** 100% compatibility with existing Tool Registry
+
+## 6.2 Performance Metrics
+- **Response Time:** <5 seconds for simple tool calls
+- **Memory Usage:** No memory leaks during long sessions
+- **Error Recovery:** <10% failure rate on malformed calls
+
+## 6.3 User Experience Metrics
+- **Command Recognition:** 100% of valid file operations handled
+- **Error Clarity:** Clear feedback for failed operations
+- **Consistency:** Identical behavior across GGUF models
+
+---
+
+## 7. Implementation Timeline
+
+### Week 1: Foundation and Core Components
+**Days 1-2:** GGUFToolPromptBuilder and GGUFToolCallParser
+**Days 3-4:** GGUFLocalHandler and GGUFContextManager  
+**Day 5:** Integration with existing routing system
+
+### Week 2: Testing and Optimization
+**Days 6-7:** Comprehensive testing and bug fixes
+**Days 8-9:** Performance optimization and error handling
+**Day 10:** Documentation and deployment preparation
+
+### Week 3: Deployment and Validation
+**Days 11-12:** Gradual rollout with feature flags
+**Days 13-14:** User testing and feedback collection
+**Day 15:** Full deployment and monitoring
+
+---
+
+## 8. File Implementation Order
+
+### 8.1 Priority 1: Core Components
+1. `services/gguf_tool_prompt.py`
+2. `services/gguf_tool_parser.py`
+3. `services/gguf_context_manager.py`
+4. `services/gguf_handler.py`
+
+### 8.2 Priority 2: Integration
+5. Update `config.py` with GGUF model type distinction
+6. Update `app.py` with new handler routing
+7. Create `tests/test_gguf_components.py`
+
+### 8.3 Priority 3: Validation
+8. Create integration tests
+9. Manual testing scripts
+10. Documentation updates
+
+---
+
+## 9. Expected Outcomes
+
+### 9.1 Immediate Benefits
+- **Restored Functionality:** Local GGUF models can execute file operations
+- **Unified Interface:** Consistent experience across all model types
+- **Tool Compatibility:** Full integration with existing 7-tool system
+
+### 9.2 Long-term Benefits
+- **Scalability:** Easy to add new GGUF models
+- **Maintainability:** Clean separation of concerns
+- **Extensibility:** Foundation for advanced GGUF features
+
+### 9.3 User Experience
+- **Reliability:** Consistent tool calling behavior
+- **Performance:** Responsive tool execution
+- **Clarity:** Clear feedback on tool operations
+
+---
+
+## 10. Next Steps
+
+### 10.1 Immediate Actions
+1. **Review and Approve Plan:** Stakeholder sign-off on approach
+2. **Environment Setup:** Ensure development environment ready
+3. **Begin Implementation:** Start with GGUFToolPromptBuilder
+
+### 10.2 Critical Dependencies
+- **GGUF Model Access:** Ensure test model is available
+- **Testing Infrastructure:** Set up comprehensive test environment
+- **Monitoring Tools:** Implement logging and debugging
+
+### 10.3 Success Validation
+Test the exact failing scenario:
+```
+Input: "create a file called ttttttttt.txt"
+Expected Output: File created successfully via GGUF tool calling
+```
+
+---
+
+**Plan Status:** Ready for Implementation  
+**Effort Estimate:** 2-3 weeks full implementation  
+**Risk Level:** Medium (well-defined approach with clear fallbacks)  
+**Impact:** High (restores critical local model functionality)
+
+This plan provides a comprehensive roadmap for implementing robust GGUF tool calling while maintaining the architectural excellence achieved in the completed legacy migration.

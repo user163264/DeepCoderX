@@ -1,0 +1,119 @@
+# ===================================================================
+# DeepCoderX Complete Requirements - Python 3.12 Optimized
+# ===================================================================
+# Last Updated: 2025-07-18
+# Supports: Python 3.12+ (recommended)
+# Architecture: Unified OpenAI + Direct GGUF + MCP Server
+# ===================================================================
+
+# ===== CORE RUNTIME DEPENDENCIES =====
+# Essential packages required for application startup
+python-dotenv>=1.0.0          # Environment variable management
+rich>=13.7.0                  # Terminal UI and progress bars
+requests>=2.31.0              # HTTP requests for APIs
+pyyaml>=6.0.1                 # YAML configuration files
+pygments>=2.17.2              # Code syntax highlighting
+pyperclip>=1.8.2              # Clipboard operations
+
+# ===== AI/ML CORE LIBRARIES =====
+# Primary AI model interfaces
+openai>=1.0.0                 # OpenAI API client (DeepSeek, etc.)
+llama-cpp-python>=0.2.79      # Direct GGUF model inference
+anthropic>=0.7.0              # Anthropic API (optional)
+
+# ===== HTTP & ASYNC SUPPORT =====
+# Required for MCP server and async operations
+aiohttp>=3.8.0                # Async HTTP server/client
+httpx>=0.24.0                 # Modern HTTP client
+aiofiles>=23.0.0              # Async file operations
+
+# ===== SECURITY & ENCRYPTION =====
+# Security utilities and cryptographic functions
+cryptography>=41.0.0          # Security validation & encryption
+keyring>=24.2.0               # Secure credential storage
+
+# ===== FILE OPERATIONS =====
+# File system monitoring and git operations
+watchdog>=3.0.0               # File system event monitoring
+gitpython>=3.1.37             # Git repository operations
+
+# ===== DATA HANDLING =====
+# JSON/data processing and validation
+orjson>=3.9.10                # Fast JSON parsing
+pydantic>=2.5.0               # Data validation
+pydantic-settings>=2.1.0      # Settings management
+
+# ===== LOGGING & MONITORING =====
+# Structured logging and monitoring
+structlog>=23.2.0             # Structured logging
+colorlog>=6.8.0               # Colored log output
+
+# ===== CLI & USER INTERFACE =====
+# Command line interface enhancements
+click>=8.1.7                  # CLI framework
+prompt-toolkit>=3.0.43        # Interactive prompts
+
+# ===== PLATFORM SPECIFIC =====
+# macOS readline support for better terminal experience
+gnureadline>=8.2.10; sys_platform == 'darwin'
+
+# ===== TESTING FRAMEWORK =====
+# Comprehensive testing suite
+pytest>=8.0.0                 # Test framework
+pytest-mock>=3.12.0           # Mocking support
+pytest-asyncio>=0.23.0        # Async test support
+pytest-cov>=4.1.0             # Coverage reporting
+requests-mock>=1.11.0         # HTTP request mocking
+
+# ===== DEVELOPMENT TOOLS (Optional) =====
+# Code quality and formatting tools
+black>=24.0.0                 # Code formatting
+isort>=5.13.0                 # Import sorting
+flake8>=7.0.0                 # Linting
+mypy>=1.8.0                   # Type checking
+pre-commit>=3.6.0             # Git hooks
+
+# ===== OPTIONAL AI ENHANCEMENTS =====
+# Advanced AI/ML support (install with: pip install -e ".[ai-full]")
+torch>=2.1.0; extra == "ai-full"            # PyTorch for advanced models
+transformers>=4.36.0; extra == "ai-full"    # HuggingFace transformers
+accelerate>=0.25.0; extra == "ai-full"      # Model acceleration
+
+# ===== TREE-SITTER (Optional) =====
+# Advanced code analysis (install with: pip install -e ".[code-analysis]")
+tree-sitter>=0.20.4; extra == "code-analysis"         # Code parsing
+tree-sitter-python>=0.20.4; extra == "code-analysis"  # Python parsing
+
+# ===================================================================
+# INSTALLATION INSTRUCTIONS:
+# ===================================================================
+# 
+# 1. Basic Installation (Recommended):
+#    pip install -r requirements.txt
+#
+# 2. Full Installation with AI enhancements:
+#    pip install -e ".[ai-full]"
+#
+# 3. Development Installation:
+#    pip install -e ".[dev]"
+#
+# 4. All features:
+#    pip install -e ".[ai-full,code-analysis,dev]"
+#
+# ===================================================================
+# PLATFORM NOTES:
+# ===================================================================
+#
+# Apple Silicon (M1/M2):
+# - llama-cpp-python will automatically use Metal acceleration
+# - gnureadline provides better terminal experience
+#
+# Linux/WSL:
+# - May need to install additional build tools for llama-cpp-python
+# - Consider: apt-get install build-essential cmake
+#
+# Windows:
+# - Visual Studio Build Tools may be required for llama-cpp-python
+# - PowerShell recommended over Command Prompt
+#
+# ===================================================================

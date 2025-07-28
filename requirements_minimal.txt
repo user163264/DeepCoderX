@@ -1,0 +1,33 @@
+# ===================================================================
+# DeepCoderX Essential Requirements - Minimal Installation
+# ===================================================================
+# Use this for fastest installation with only essential dependencies
+# For full features, use requirements.txt instead
+# ===================================================================
+
+# Core runtime - ESSENTIAL
+python-dotenv>=1.0.0
+rich>=13.7.0
+requests>=2.31.0
+openai>=1.0.0
+pyyaml>=6.0.1
+pygments>=2.17.2
+pyperclip>=1.8.2
+
+# GGUF model support - ESSENTIAL
+llama-cpp-python>=0.2.79
+
+# macOS support - ESSENTIAL
+gnureadline>=8.2.10; sys_platform == 'darwin'
+
+# Security - NEEDED
+cryptography>=41.0.0
+
+# File operations - NEEDED
+gitpython>=3.1.37
+watchdog>=3.0.0
+
+# ===================================================================
+# INSTALLATION:
+# pip install -r requirements_minimal.txt
+# ===================================================================
